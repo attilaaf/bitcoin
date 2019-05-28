@@ -453,7 +453,7 @@ std::string HelpMessage(HelpMessageMode mode) {
 #endif
     strUsage += HelpMessageOpt(
         "-txindex", strprintf(_("Maintain a full transaction index, used by "
-                                "the getrawtransaction rpc call (default: %d)"),
+                                "the getrawtransaction and getrawtransactions rpc call (default: %d)"),
                               DEFAULT_TXINDEX));
     strUsage += HelpMessageOpt(
         "-usecashaddr", _("Use Cash Address for destination encoding instead "

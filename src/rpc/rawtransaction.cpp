@@ -234,12 +234,166 @@ static UniValue getrawtransaction(const Config &config,
         }
     }
 
+    // Accept either a bool (true) or a num (>=1) to indicate whether to return hex or not
+    bool fIncludeHex = true;
+    if (request.params.size() > 2) {
+        if (request.params[2].isNum()) {
+            if (request.params[2].get_int() == 0) {
+                fVerbose = false;
+            }
+        } else if (request.params[2].isBool()) {
+            if (request.params[2].isFalse()) {
+                fVerbose = false;
+            }
+        } else {
+            throw JSONRPCError(
+                RPC_TYPE_ERROR,
+                "Invalid type provided. IncludeHex parameter must be a boolean.");
+        }
+    }
+
     CTransactionRef tx;
     uint256 hashBlock;
     if (!GetTransaction(config, txid, tx, hashBlock, true)) {
         throw JSONRPCError(
             RPC_INVALID_ADDRESS_OR_KEY,
             std::string(fTxIndex ? "No such mempool or blockchain transaction"
+                                 : "No such mempool transaction. Use -txindex "
+                                   "to enable blockchain transaction queries") +
+                ". Use gettransaction for wallet transactions.");
+    }
+
+    std::string strHex = EncodeHexTx(*tx, RPCSerializationFlags());
+
+    if (!fVerbose) {
+        return strHex;
+    }
+
+    UniValue result(UniValue::VOBJ);
+
+    // Only include the hex if the user wanted it
+    if (fIncludeHex) {
+        result.push_back(Pair("hex", strHex));
+    }
+
+    TxToJSON(config, *tx, hashBlock, result);
+    return result;
+}
+
+static UniValue getrawtransactions(const Config &config,
+                                  const JSONRPCRequest &request) {
+    if (request.fHelp || request.params.size() < 1 ||
+        request.params.size() > 2) {
+        throw std::runtime_error(
+            "getrawtransactions \"txid\" ( verbose )\n"
+
+            "\nNOTE: By default this function only works for mempool  "
+            "transactions. If the -txindex option is\n"
+            "enabled, it also works for blockchain transactions.\n"
+            "DEPRECATED: for now, it also works for transactions with unspent "
+            "outputs.\n"
+
+            "\nReturn the raw transaction data.\n"
+            "\nIf verbose is 'true', returns an Object with information about "
+            "'txid'.\n"
+            "If verbose is 'false' or omitted, returns a string that is "
+            "serialized, hex-encoded data for 'txid'.\n"
+
+            "\nArguments:\n"
+            "1. \"txid\"      (string, required) The transaction id\n"
+            "2. verbose       (bool, optional, default=false) If false, return "
+            "a string, otherwise return a json object\n"
+
+            "\nResult (if verbose is not set or set to false):\n"
+            "\"data\"      (string) The serialized, hex-encoded data for "
+            "'txid'\n"
+
+            "\nResult (if verbose is set to true):\n"
+            "{\n"
+            "  \"hex\" : \"data\",       (string) The serialized, hex-encoded "
+            "data for 'txid'\n"
+            "  \"txid\" : \"id\",        (string) The transaction id (same as "
+            "provided)\n"
+            "  \"hash\" : \"id\",        (string) The transaction hash "
+            "(differs from txid for witness transactions)\n"
+            "  \"size\" : n,             (numeric) The serialized transaction "
+            "size\n"
+            "  \"version\" : n,          (numeric) The version\n"
+            "  \"locktime\" : ttt,       (numeric) The lock time\n"
+            "  \"vin\" : [               (array of json objects)\n"
+            "     {\n"
+            "       \"txid\": \"id\",    (string) The transaction id\n"
+            "       \"vout\": n,         (numeric) \n"
+            "       \"scriptSig\": {     (json object) The script\n"
+            "         \"asm\": \"asm\",  (string) asm\n"
+            "         \"hex\": \"hex\"   (string) hex\n"
+            "       },\n"
+            "       \"sequence\": n      (numeric) The script sequence number\n"
+            "     }\n"
+            "     ,...\n"
+            "  ],\n"
+            "  \"vout\" : [              (array of json objects)\n"
+            "     {\n"
+            "       \"value\" : x.xxx,            (numeric) The value in " +
+            CURRENCY_UNIT +
+            "\n"
+            "       \"n\" : n,                    (numeric) index\n"
+            "       \"scriptPubKey\" : {          (json object)\n"
+            "         \"asm\" : \"asm\",          (string) the asm\n"
+            "         \"hex\" : \"hex\",          (string) the hex\n"
+            "         \"reqSigs\" : n,            (numeric) The required sigs\n"
+            "         \"type\" : \"pubkeyhash\",  (string) The type, eg "
+            "'pubkeyhash'\n"
+            "         \"addresses\" : [           (json array of string)\n"
+            "           \"address\"        (string) bitcoin address\n"
+            "           ,...\n"
+            "         ]\n"
+            "       }\n"
+            "     }\n"
+            "     ,...\n"
+            "  ],\n"
+            "  \"blockhash\" : \"hash\",   (string) the block hash\n"
+            "  \"confirmations\" : n,      (numeric) The confirmations\n"
+            "  \"time\" : ttt,             (numeric) The transaction time in "
+            "seconds since epoch (Jan 1 1970 GMT)\n"
+            "  \"blocktime\" : ttt         (numeric) The block time in seconds "
+            "since epoch (Jan 1 1970 GMT)\n"
+            "}\n"
+
+            "\nExamples:\n" +
+            HelpExampleCli("getrawtransactions", "\"mytxid\"") +
+            HelpExampleCli("getrawtransactions", "\"mytxid\" true") +
+            HelpExampleRpc("getrawtransactions", "\"mytxid\", true"));
+    }
+
+    LOCK(cs_main);
+
+    TxId txid = TxId(ParseHashV(request.params[0], "parameter 1"));
+
+    // Accept either a bool (true) or a num (>=1) to indicate verbose output.
+    bool fVerbose = false;
+    if (request.params.size() > 1) {
+        if (request.params[1].isNum()) {
+            if (request.params[1].get_int() != 0) {
+                fVerbose = true;
+            }
+        } else if (request.params[1].isBool()) {
+            if (request.params[1].isTrue()) {
+                fVerbose = true;
+            }
+        } else {
+            throw JSONRPCError(
+                RPC_TYPE_ERROR,
+                "Invalid type provided. Verbose parameter must be a boolean.");
+        }
+    }
+
+    CTransactionRef tx;
+    uint256 hashBlock;
+    if (!GetTransaction(config, txid, tx, hashBlock, true)) {
+        throw JSONRPCError(
+            RPC_INVALID_ADDRESS_OR_KEY,
+            std::string(fTxIndex ? "No such mempool or blockchain transaction" + txid.ToString()
                                  : "No such mempool transaction. Use -txindex "
                                    "to enable blockchain transaction queries") +
                 ". Use gettransaction for wallet transactions.");
@@ -1183,6 +1337,7 @@ static const CRPCCommand commands[] = {
     //  category            name                      actor (function)        okSafeMode
     //  ------------------- ------------------------  ----------------------  ----------
     { "rawtransactions",    "getrawtransaction",      getrawtransaction,      true,  {"txid","verbose"} },
+    { "rawtransactions",    "getrawtransactions",     getrawtransactions,     true,  {"txid","verbose"} },
     { "rawtransactions",    "createrawtransaction",   createrawtransaction,   true,  {"inputs","outputs","locktime"} },
     { "rawtransactions",    "decoderawtransaction",   decoderawtransaction,   true,  {"hexstring"} },
     { "rawtransactions",    "decodescript",           decodescript,           true,  {"hexstring"} },
