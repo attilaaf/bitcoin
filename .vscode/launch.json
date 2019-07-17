@@ -1,0 +1,20 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(lldb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bitcoin-sv/src/bitcoind",
+            "args": ["-rpcuser=bpsecretuser", "-rpcpassword=bps7cret", "-datadir=/Users/sauron/git/me/attilaaf/bitcoin-sv200/datadir", "-txindex=1", "-usecashaddr=0", "-rpcworkqueue=512", "-dbcache=4000", "-debug"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "lldb"
+        }
+    ]
+}
