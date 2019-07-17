@@ -1,5 +1,6 @@
 *.tar.gz
 
+.vscode/ipch
 *.exe
 src/bitcoin
 src/bitcoind

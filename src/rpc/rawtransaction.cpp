@@ -35,6 +35,10 @@
 
 #include <univalue.h>
 
+typedef std::map<int64_t, int64_t> VoutToValueMap;
+typedef std::map<TxId, std::unique_ptr<VoutToValueMap>> TxIdToVoutToValueMap;
+typedef std::map<int64_t, std::vector<CTxDestination>> VoutToAddressesMap;
+
 void ScriptPubKeyToJSON(const Config &config, const CScript &scriptPubKey,
                         UniValue &out, bool fIncludeHex) {
     txnouttype type;
@@ -42,6 +46,37 @@ void ScriptPubKeyToJSON(const Config &config, const CScript &scriptPubKey,
     int nRequired;
 
     out.push_back(Pair("asm", ScriptToAsmStr(scriptPubKey)));
+    if (fIncludeHex) {
+        out.push_back(
+            Pair("hex", HexStr(scriptPubKey.begin(), scriptPubKey.end())));
+    }
+
+    if (!ExtractDestinations(scriptPubKey, type, addresses, nRequired)) {
+        out.push_back(Pair("type", GetTxnOutputType(type)));
+        return;
+    }
+
+    out.push_back(Pair("reqSigs", nRequired));
+    out.push_back(Pair("type", GetTxnOutputType(type)));
+
+    UniValue a(UniValue::VARR);
+    for (const CTxDestination &addr : addresses) {
+        a.push_back(EncodeDestination(addr));
+    }
+
+    out.push_back(Pair("addresses", a));
+}
+
+void ScriptPubKeyToJSON2(const Config &config, const CScript &scriptPubKey,
+                        UniValue &out, bool fIncludeAsm, bool fIncludeHex) {
+    txnouttype type;
+    std::vector<CTxDestination> addresses;
+    int nRequired;
+
+    if (fIncludeAsm) {
+        out.push_back(Pair("asm", ScriptToAsmStr(scriptPubKey)));
+    }
+
     if (fIncludeHex) {
         out.push_back(
             Pair("hex", HexStr(scriptPubKey.begin(), scriptPubKey.end())));
@@ -95,9 +130,12 @@ void TxToJSON(const Config &config, const CTransaction &tx,
 
     entry.push_back(Pair("vin", vin));
     UniValue vout(UniValue::VARR);
+    int64_t valueOut(0);
     for (unsigned int i = 0; i < tx.vout.size(); i++) {
         const CTxOut &txout = tx.vout[i];
         UniValue out(UniValue::VOBJ);
+        int64_t voutAmt(txout.nValue.GetSatoshis());
+        valueOut += voutAmt;
         out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
         out.push_back(Pair("n", (int64_t)i));
         UniValue o(UniValue::VOBJ);
@@ -124,6 +162,169 @@ void TxToJSON(const Config &config, const CTransaction &tx,
             }
         }
     }
+    // We can only calculate these datas
+    if (tx.IsCoinBase()) {
+        entry.push_back(Pair("isCoinBase", true));
+    }
+    entry.push_back(Pair("valueOut", ValueFromAmount(Amount(valueOut))));
+}
+
+void TxToJSON2(const Config &config, const CTransaction &tx,
+              const uint256 hashBlock, UniValue &entry, bool fIncludeAsm, bool fIncludeHex) {
+    entry.push_back(Pair("txid", tx.GetId().GetHex()));
+    entry.push_back(Pair("hash", tx.GetHash().GetHex()));
+    entry.push_back(Pair(
+        "size", (int)::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION)));
+    entry.push_back(Pair("version", tx.nVersion));
+    entry.push_back(Pair("locktime", (int64_t)tx.nLockTime));
+
+    std::set<TxId> txidSet;  // Tracks the txid's that are part of the vins used to compute valueIn and addr
+    for (unsigned int i = 0; i < tx.vin.size(); i++) {
+        const CTxIn &txin = tx.vin[i];
+        UniValue in(UniValue::VOBJ);
+        if (!tx.IsCoinBase()) {
+            txidSet.insert(txin.prevout.GetTxId());
+        }
+    }
+    // Fetch all the tx's for the vins
+    std::unique_ptr<TxIdToVoutToValueMap> txidToVoutValueMap(new TxIdToVoutToValueMap());
+    std::unique_ptr<std::map<TxId, std::unique_ptr<VoutToAddressesMap>>> txidToVoutAddressMap(new std::map<TxId, std::unique_ptr<VoutToAddressesMap>>());
+    std::set<TxId>::iterator it = txidSet.begin();
+
+    bool useRegularJSON = false;
+    while (it != txidSet.end()) {
+        CTransactionRef txInput;
+        uint256 hashBlockInputTx;
+        if (!GetTransaction(config, *it, txInput, hashBlockInputTx, true)) {
+            std::cout << "bitindex_tx_not_found if (!GetTransaction(config, *it, txInput, hashBlockInputTx, true)) {" << std::endl;
+            TxToJSON(config, tx, hashBlock, entry);
+            return;
+        }
+        // Build the maps
+        for (unsigned int i = 0; i < txInput->vout.size(); i++) {
+            const CTxOut &txout = txInput->vout[i];
+            auto txidToVoutValueMapIterator = (*txidToVoutValueMap).find(*it);
+            auto txidToVoutAddressMapIterator = (*txidToVoutAddressMap).find(*it);
+            if (txidToVoutValueMapIterator == (*txidToVoutValueMap).end()) {
+                VoutToValueMap* voutValueMap = new VoutToValueMap();
+                VoutToAddressesMap* voutAddrMap = new VoutToAddressesMap();
+                (*txidToVoutValueMap).insert(std::make_pair(*it, std::unique_ptr<VoutToValueMap>(voutValueMap)));
+                (*txidToVoutAddressMap).insert(std::make_pair(*it, std::unique_ptr<VoutToAddressesMap>(voutAddrMap)));
+                txidToVoutValueMapIterator = (*txidToVoutValueMap).find(*it);
+                txidToVoutAddressMapIterator = (*txidToVoutAddressMap).find(*it);
+            }
+            auto voutValueMapIterator = txidToVoutValueMapIterator->second->find((int64_t) i);
+            if (voutValueMapIterator == txidToVoutValueMapIterator->second->end()) {
+                txidToVoutValueMapIterator->second->insert(std::make_pair((int64_t) i, txout.nValue.GetSatoshis()));
+                voutValueMapIterator = txidToVoutValueMapIterator->second->find((int64_t) i);
+            }
+            auto voutAddrMapIterator = txidToVoutAddressMapIterator->second->find((int64_t) i);
+            if (voutAddrMapIterator == txidToVoutAddressMapIterator->second->end()) {
+                txnouttype type;
+                std::vector<CTxDestination> addresses;
+                int nRequired;
+                if (!ExtractDestinations(txout.scriptPubKey, type, addresses, nRequired)) {
+                    // Could not extract, therefore it is not a typical addr
+                    std::cout << "ExtractDestinations(txout.scriptPubKey, type, addresses, nRequired) " << std::endl;
+                }
+                txidToVoutAddressMapIterator->second->insert(std::make_pair((int64_t) i, addresses));
+            }
+        }
+        it++;
+    }
+
+    int64_t valueIn(0);
+    UniValue vin(UniValue::VARR);
+    for (unsigned int i = 0; i < tx.vin.size(); i++) {
+        const CTxIn &txin = tx.vin[i];
+        UniValue in(UniValue::VOBJ);
+        if (tx.IsCoinBase()) {
+            in.push_back(Pair("coinbase", HexStr(txin.scriptSig.begin(),
+                                                 txin.scriptSig.end())));
+        } else {
+            in.push_back(Pair("txid", txin.prevout.GetTxId().GetHex()));
+            in.push_back(Pair("vout", int64_t(txin.prevout.GetN())));
+            UniValue o(UniValue::VOBJ);
+            if (fIncludeAsm) {
+                o.push_back(Pair("asm", ScriptToAsmStr(txin.scriptSig, true)));
+            }
+            if (fIncludeHex) {
+                o.push_back(Pair(
+                    "hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
+            }
+            in.push_back(Pair("scriptSig", o));
+            //
+            // Get the "value" vout of the vin
+            //
+            auto voutValueMap = *((*txidToVoutValueMap).find(txin.prevout.GetTxId())->second);
+            const bool isInValueMap = voutValueMap.find(int64_t(txin.prevout.GetN())) != voutValueMap.end();
+
+            if (!isInValueMap) {
+                std::cout << "const bool isInValueMap = voutValueMap.find(int64_t(txin.prevout.GetN())) != voutValueMap.end();" << std::endl;
+                throw new std::exception();
+            }
+            auto vinVoutValue = voutValueMap.find(int64_t(txin.prevout.GetN()));
+            in.push_back(Pair("valueSat", vinVoutValue->second));
+            in.push_back(Pair("value", ValueFromAmount(Amount(vinVoutValue->second))));
+            valueIn += vinVoutValue->second;
+            // Get the the "addr" from vout of vin
+            auto voutAddrMap = *((*txidToVoutAddressMap).find(txin.prevout.GetTxId())->second);
+            auto voutAddrMapAddrIterator = voutAddrMap.find(int64_t(txin.prevout.GetN()));
+            if (voutAddrMapAddrIterator == voutAddrMap.end()) {
+                std::cout << "voutAddrMapAddrIterator == voutAddrMap.end()" << std::endl;
+                throw new std::exception();
+            }
+            auto vinVoutAddr = voutAddrMap.find(int64_t(txin.prevout.GetN()));
+            if ( vinVoutAddr->second.size()) {
+                in.push_back(Pair("addr", EncodeDestination(vinVoutAddr->second.at(0))));
+            }
+        }
+        in.push_back(Pair("sequence", (int64_t)txin.nSequence));
+        vin.push_back(in);
+    }
+    entry.push_back(Pair("vin", vin));
+    UniValue vout(UniValue::VARR);
+
+    int64_t valueOut(0);
+    for (unsigned int i = 0; i < tx.vout.size(); i++) {
+        const CTxOut &txout = tx.vout[i];
+        UniValue out(UniValue::VOBJ);
+        int64_t voutAmt(txout.nValue.GetSatoshis());
+        valueOut += voutAmt;
+        out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
+        out.push_back(Pair("valueSat", txout.nValue.GetSatoshis()));
+        out.push_back(Pair("n", (int64_t)i));
+        UniValue o(UniValue::VOBJ);
+        ScriptPubKeyToJSON2(config, txout.scriptPubKey, o, fIncludeAsm, fIncludeHex);
+        out.push_back(Pair("scriptPubKey", o));
+        vout.push_back(out);
+    }
+
+    entry.push_back(Pair("vout", vout));
+
+    if (!hashBlock.IsNull()) {
+        entry.push_back(Pair("blockhash", hashBlock.GetHex()));
+        BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
+        if (mi != mapBlockIndex.end() && (*mi).second) {
+            CBlockIndex *pindex = (*mi).second;
+            if (chainActive.Contains(pindex)) {
+                entry.push_back(
+                    Pair("confirmations",
+                         1 + chainActive.Height() - pindex->nHeight));
+                entry.push_back(Pair("time", pindex->GetBlockTime()));
+                entry.push_back(Pair("blocktime", pindex->GetBlockTime()));
+            } else {
+                entry.push_back(Pair("confirmations", 0));
+            }
+        }
+    }
+    if (!tx.IsCoinBase()) {
+        entry.push_back(Pair("valueIn", ValueFromAmount(Amount(valueIn))));
+        entry.push_back(Pair("fees", ValueFromAmount(Amount(valueIn - valueOut))));
+    } else {
+        entry.push_back(Pair("isCoinBase", true));
+    }
+    entry.push_back(Pair("valueOut", ValueFromAmount(Amount(valueOut))));
 }
 
 static UniValue getrawtransaction(const Config &config,
@@ -253,8 +454,148 @@ static UniValue getrawtransaction(const Config &config,
 
     UniValue result(UniValue::VOBJ);
     result.push_back(Pair("hex", strHex));
-    TxToJSON(config, *tx, hashBlock, result);
+    TxToJSON2(config, *tx, hashBlock, result, true, true);
     return result;
+}
+
+static UniValue getrawtransactions(const Config &config,
+                                  const JSONRPCRequest &request) {
+    if (request.fHelp || request.params.size() < 3 ||
+        request.params.size() > 3) {
+        throw std::runtime_error(
+            "getrawtransactions \"txids\" ( includeAsm ) (includeHex) \n"
+
+            "\nNOTE: By default this function only works for mempool "
+            "transactions. If the -txindex option is\n"
+            "enabled, it also works for blockchain transactions.\n"
+            "DEPRECATED: for now, it also works for transactions with unspent "
+            "outputs.\n"
+
+            "\nReturn the raw transactions data.\n"
+            "\nIf verbose is 'true', returns an Object with information about "
+            "'txids'.\n"
+            "If verbose is 'false' or omitted, returns a string that is "
+            "serialized, hex-encoded data for 'txid'.\n"
+
+            "\nArguments:\n"
+            "1. \"txids\"      (string, required) The transaction id\n"
+            "2. noAsm       (bool, optional, default=true) If false, return "
+            "ASM, if true then omit the ASM in transactions\n"
+            "3. noScript       (bool, optional, default=true) If false, return "
+            "script, if true then omit the script in transactions\n"
+
+            "\nResult:\n"
+            "{\n"
+            "  \"hex\" : \"data\",       (string) The serialized, hex-encoded "
+            "data for 'txid'\n"
+            "  \"txid\" : \"id\",        (string) The transaction id (same as "
+            "provided)\n"
+            "  \"hash\" : \"id\",        (string) The transaction hash "
+            "(differs from txid for witness transactions)\n"
+            "  \"size\" : n,             (numeric) The serialized transaction "
+            "size\n"
+            "  \"version\" : n,          (numeric) The version\n"
+            "  \"locktime\" : ttt,       (numeric) The lock time\n"
+            "  \"vin\" : [               (array of json objects)\n"
+            "     {\n"
+            "       \"txid\": \"id\",    (string) The transaction id\n"
+            "       \"vout\": n,         (numeric) \n"
+            "       \"scriptSig\": {     (json object) The script\n"
+            "         \"asm\": \"asm\",  (string) asm (omitted if noAsm=true)\n"
+            "         \"hex\": \"hex\"   (string) hex (omitted if noAsm=true)\n"
+            "       },\n"
+            "       \"sequence\": n      (numeric) The script sequence number\n"
+            "     }\n"
+            "     ,...\n"
+            "  ],\n"
+            "  \"vout\" : [              (array of json objects)\n"
+            "     {\n"
+            "       \"value\" : x.xxx,            (numeric) The value in " +
+            CURRENCY_UNIT +
+            "\n"
+            "       \"n\" : n,                    (numeric) index\n"
+            "       \"scriptPubKey\" : {          (json object)\n"
+            "         \"asm\" : \"asm\",          (string) the asm (omitted if noAsm=true)\n"
+            "         \"hex\" : \"hex\",          (string) the hex (omitted if noAsm=true)\n"
+            "         \"reqSigs\" : n,            (numeric) The required sigs\n"
+            "         \"type\" : \"pubkeyhash\",  (string) The type, eg "
+            "'pubkeyhash'\n"
+            "         \"addresses\" : [           (json array of string)\n"
+            "           \"address\"        (string) bitcoin address\n"
+            "           ,...\n"
+            "         ]\n"
+            "       }\n"
+            "     }\n"
+            "     ,...\n"
+            "  ],\n"
+            "  \"blockhash\" : \"hash\",   (string) the block hash\n"
+            "  \"confirmations\" : n,      (numeric) The confirmations\n"
+            "  \"time\" : ttt,             (numeric) The transaction time in "
+            "seconds since epoch (Jan 1 1970 GMT)\n"
+            "  \"blocktime\" : ttt         (numeric) The block time in seconds "
+            "since epoch (Jan 1 1970 GMT)\n"
+            "}\n"
+
+            "\nExamples:\n" +
+            HelpExampleCli("getrawtransactions", "[\"mytxid1\", \"mytxid2\"]") +
+            HelpExampleCli("getrawtransactions", "[\"mytxid1\"], true false") +
+            HelpExampleRpc("getrawtransactions", "[\"mytxid1\", \"mytxid2\"], false false"));
+    }
+
+    LOCK(cs_main);
+
+    if (!request.params[0].isArray()) {
+        throw JSONRPCError(
+        RPC_TYPE_ERROR,
+        "Invalid type provided. txids parameter must be an array.");
+    }
+
+    bool fIncludeAsm = false;
+
+    if (!request.params[1].isBool()) {
+            throw JSONRPCError(
+            RPC_TYPE_ERROR,
+            "Invalid type provided. IncludeAsm parameter must be a boolean.");
+    } else {
+        fIncludeAsm = request.params[1].isTrue();
+    }
+
+    bool fIncludeHex = false;
+    if (!request.params[2].isBool()) {
+            throw JSONRPCError(
+            RPC_TYPE_ERROR,
+            "Invalid type provided. IncludeHex parameter must be a boolean.");
+    } else {
+        fIncludeHex = request.params[2].isTrue();
+    }
+
+    // std::string strHex = EncodeHexTx(*tx, RPCSerializationFlags());
+    // Todo, remove data
+    // UniValue result(UniValue::VOBJ);
+    // result.push_back(Pair("hex", strHex));
+    // TxToJSON(config, *tx, hashBlock, result);
+
+    UniValue txsResults(UniValue::VARR);
+    // txsResults.push_back(result);
+    // For each txid, get the transaction if available and push it back
+    UniValue txIdsArray(request.params[0].get_array());
+    for (size_t idx = 0; idx < txIdsArray.size(); idx++) {
+        const UniValue &p = txIdsArray[idx];
+        TxId txid = TxId(ParseHashV(p, "parameter"));
+        CTransactionRef tx;
+        uint256 hashBlock;
+        if (!GetTransaction(config, txid, tx, hashBlock, true)) {
+            continue;
+        }
+        UniValue result(UniValue::VOBJ);
+        if (fIncludeHex) {
+            std::string strHex = EncodeHexTx(*tx, RPCSerializationFlags());
+            result.push_back(Pair("hex", strHex));
+        }
+        TxToJSON2(config, *tx, hashBlock, result, fIncludeAsm, fIncludeHex);
+        txsResults.push_back(result);
+    }
+    return txsResults;
 }
 
 static UniValue gettxoutproof(const Config &config,
@@ -1188,7 +1529,7 @@ static const CRPCCommand commands[] = {
     { "rawtransactions",    "decodescript",           decodescript,           true,  {"hexstring"} },
     { "rawtransactions",    "sendrawtransaction",     sendrawtransaction,     false, {"hexstring","allowhighfees"} },
     { "rawtransactions",    "signrawtransaction",     signrawtransaction,     false, {"hexstring","prevtxs","privkeys","sighashtype"} }, /* uses wallet if enabled */
-
+    { "rawtransactions",    "getrawtransactions",     getrawtransactions,     true,  {"txids", "includeAsm", "includeHex"} },
     { "blockchain",         "gettxoutproof",          gettxoutproof,          true,  {"txids", "blockhash"} },
     { "blockchain",         "verifytxoutproof",       verifytxoutproof,       true,  {"proof"} },
 };
@@ -1199,3 +1540,4 @@ void RegisterRawTransactionRPCCommands(CRPCTable &t) {
         t.appendCommand(commands[vcidx].name, &commands[vcidx]);
     }
 }
+
