@@ -122,6 +122,7 @@ void TxToJSON(const Config &config, const CTransaction &tx,
             o.push_back(Pair(
                 "hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
             in.push_back(Pair("scriptSig", o));
+            in.push_back(Pair("n", (int64_t)i));
         }
 
         in.push_back(Pair("sequence", (int64_t)txin.nSequence));
@@ -244,6 +245,8 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
         } else {
             in.push_back(Pair("txid", txin.prevout.GetTxId().GetHex()));
             in.push_back(Pair("vout", int64_t(txin.prevout.GetN())));
+            in.push_back(Pair("n", (int64_t)i));
+
             UniValue o(UniValue::VOBJ);
             if (fIncludeAsm) {
                 o.push_back(Pair("asm", ScriptToAsmStr(txin.scriptSig, true)));
@@ -317,6 +320,17 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
                 entry.push_back(Pair("confirmations", 0));
             }
         }
+    } else {
+        entry.push_back(Pair("confirmations", 0));
+        LOCK(mempool.cs);
+
+        CTxMemPool::txiter it = mempool.mapTx.find(tx.GetId());
+        if (it == mempool.mapTx.end()) {
+            entry.push_back(Pair("time", 0));
+        } else {
+            const CTxMemPoolEntry &e = *it;
+            entry.push_back(Pair("time", e.GetTime()));
+        }
     }
     if (!tx.IsCoinBase()) {
         entry.push_back(Pair("valueIn", ValueFromAmount(Amount(valueIn))));
@@ -325,6 +339,12 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
         entry.push_back(Pair("isCoinBase", true));
     }
     entry.push_back(Pair("valueOut", ValueFromAmount(Amount(valueOut))));
+
+    std::string strHex = EncodeHexTx(tx, RPCSerializationFlags());
+
+    if (fIncludeHex) {
+        entry.push_back(Pair("rawtx", strHex));
+    }
 }
 
 static UniValue getrawtransaction(const Config &config,
@@ -588,10 +608,6 @@ static UniValue getrawtransactions(const Config &config,
             continue;
         }
         UniValue result(UniValue::VOBJ);
-        if (fIncludeHex) {
-            std::string strHex = EncodeHexTx(*tx, RPCSerializationFlags());
-            result.push_back(Pair("hex", strHex));
-        }
         TxToJSON2(config, *tx, hashBlock, result, fIncludeAsm, fIncludeHex);
         txsResults.push_back(result);
     }
