@@ -24,9 +24,7 @@
 #include "wallet/walletdb.h"
 
 #endif
-
 #include "vmtouch.h"
-
 #include <univalue.h>
 
 #include <cstdint>
