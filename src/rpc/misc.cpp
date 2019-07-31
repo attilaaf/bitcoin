@@ -22,10 +22,9 @@
 #include "wallet/rpcwallet.h"
 #include "wallet/wallet.h"
 #include "wallet/walletdb.h"
-#include "vmtouch.h"
 
 #endif
-
+#include "vmtouch.h"
 #include <univalue.h>
 
 #include <cstdint>

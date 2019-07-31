@@ -8,7 +8,7 @@
 #endif
 
 #include "init.h"
-
+#include "inttypes.h"
 #include "addrman.h"
 #include "amount.h"
 #include "chain.h"
