@@ -12,6 +12,8 @@
 #include "primitives/transaction.h"
 #include "random.h"
 #include "sync.h"
+#include "addressindex.h"
+#include "spentindex.h"
 
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -32,6 +34,8 @@
 class CAutoFile;
 class CBlockIndex;
 class Config;
+struct CAddressUnspentKey;
+struct CAddressUnspentValue;
 
 namespace mining
 {
@@ -576,8 +580,28 @@ private:
     typedef std::map<txiter, TxLinks, CompareIteratorByHash> txlinksMap;
     txlinksMap mapLinks;
 
+ 
     void updateParentNL(txiter entry, txiter parent, bool add);
     void updateChildNL(txiter entry, txiter child, bool add);
+ 
+    typedef std::map<CMempoolAddressDeltaKey, CMempoolAddressDelta, CMempoolAddressDeltaKeyCompare> addressDeltaMap;
+    addressDeltaMap mapAddress;
+
+    typedef std::map<uint256, std::vector<CMempoolAddressDeltaKey> > addressDeltaMapInserted;
+    addressDeltaMapInserted mapAddressInserted;
+
+    // Map the address key to the potential spends data
+    // We use this datastructure because then we can quickly enumerate all the utxo's for an address, and also be able to easily delete by txhash on removal
+    typedef std::map<CMempoolAddressDeltaKey, CMempoolAddressPotentialSpendsDelta, CMempoolAddressDeltaKeyCompare> addressPotentialSpendDeltaMap;
+
+    addressPotentialSpendDeltaMap mapAddressPotentialSpends;
+    addressDeltaMapInserted mapAddressPotentialSpendsInserted;
+
+    typedef std::map<CSpentIndexKey, CSpentIndexValue, CSpentIndexKeyCompare> mapSpentIndex;
+    mapSpentIndex mapSpent;
+
+    typedef std::map<uint256, std::vector<CSpentIndexKey> > mapSpentIndexInserted;
+    mapSpentIndexInserted mapSpentInserted;
 
     std::vector<indexed_transaction_set::const_iterator>
     getSortedDepthAndScoreNL() const;
@@ -613,6 +637,7 @@ public:
     // to track size/count of descendant transactions. First version of
     // AddUnchecked can be used to have it call CalculateMemPoolAncestors(), and
     // then invoke the second version.
+<<<<<<< HEAD
     void AddUnchecked(
             const uint256 &hash,
             const CTxMemPoolEntry &entry,
@@ -642,6 +667,34 @@ public:
             size_t* pnDynamicMemoryUsage = nullptr);
 
     void RemoveRecursive(
+=======
+    bool addUnchecked(const uint256 &hash, const CTxMemPoolEntry &entry,
+                      bool validFeeEstimate = true);
+    bool addUnchecked(const uint256 &hash, const CTxMemPoolEntry &entry,
+                      setEntries &setAncestors, bool validFeeEstimate = true);
+
+    void addAddressIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
+    bool getAddressIndex(std::vector<std::pair<uint160, int> > &addresses,
+                         std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > &results);
+    bool getAddressIndexWithAddress(std::vector<std::pair<uint160, int> > &addresses,
+                         std::vector<std::pair<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>, uint160> > &results);
+    bool removeAddressIndex(const uint256 txhash);
+
+    void addAddressPotentialSpendsIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
+    bool getAddressPotentialSpendsIndex(std::vector<std::pair<uint160, int> > &addresses,
+                         std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressPotentialSpendsDelta> > &results);
+
+    bool removeAddressPotentialSpendsIndex(const uint256 txhash);
+
+    bool getAddressUnspent(std::vector<std::pair<uint160, int> > &addresses,
+                         std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
+
+    void addSpentIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
+    bool getSpentIndex(CSpentIndexKey &key, CSpentIndexValue &value);
+    bool removeSpentIndex(const uint256 txhash);
+
+    void removeRecursive(
+>>>>>>> Full address index
         const CTransaction &tx,
         const mining::CJournalChangeSetPtr& changeSet,
         MemPoolRemovalReason reason = MemPoolRemovalReason::UNKNOWN);

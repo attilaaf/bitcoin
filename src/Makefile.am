@@ -476,7 +476,8 @@ bitcoind_LDADD += \
   $(EVENT_PTHREADS_LIBS) \
   $(EVENT_LIBS) \
   $(ZMQ_LIBS) \
-  $(AIO_LIBS)
+  $(AIO_LIBS)  -L/usr/local/lib
+
 
 # bitcoin-cli binary #
 bitcoin_cli_SOURCES = bitcoin-cli.cpp
@@ -543,17 +544,17 @@ crypto/sha512.cpp \
 crypto/sha512.h \
 crypto/chacha20.cpp \
 crypto/chacha20.h
- 
+
 bitcoin_miner_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
 bitcoin_miner_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 bitcoin_miner_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
- 
+
 bitcoin_miner_LDADD = \
   $(LIBBITCOIN_CLI) \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL)
- 
+
 bitcoin_miner_LDADD += $(BOOST_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(EVENT_LIBS)
 #
 

@@ -179,6 +179,11 @@ template <typename Stream> inline void Serialize(Stream &s, int16_t a) {
 template <typename Stream> inline void Serialize(Stream &s, uint16_t a) {
     ser_writedata16(s, a);
 }
+template<typename Stream> inline void ser_writedata32be(Stream &s, uint32_t obj)
+{
+    obj = htobe32(obj);
+    s.write((char*)&obj, 4);
+}
 template <typename Stream> inline void Serialize(Stream &s, int32_t a) {
     ser_writedata32(s, a);
 }
@@ -212,6 +217,12 @@ template <typename Stream> inline void Unserialize(Stream &s, int16_t &a) {
 }
 template <typename Stream> inline void Unserialize(Stream &s, uint16_t &a) {
     a = ser_readdata16(s);
+}
+template<typename Stream> inline uint32_t ser_readdata32be(Stream &s)
+{
+    uint32_t obj;
+    s.read((char*)&obj, 4);
+    return be32toh(obj);
 }
 template <typename Stream> inline void Unserialize(Stream &s, int32_t &a) {
     a = ser_readdata32(s);
@@ -368,10 +379,10 @@ I ReadVarInt(Stream &is) {
     uintmax_t n {0};
     // VarInt encoding is only defined for unsigned integers. However there are places in source code
     // where ReadVarInt is called with a signed integer type (such as when serializing CDiskBlockPos)
-    // Those places need to make sure that the actual values are always non-negative. 
+    // Those places need to make sure that the actual values are always non-negative.
     // Static cast in the following line if required to make MSVC compiler happy.
     // It is safe, because the value that is being casted is always positive and will always
-    // fit in the unsigned version of type. 
+    // fit in the unsigned version of type.
     static uintmax_t overflow { static_cast<uintmax_t>(std::numeric_limits<I>::max() >> 7) };
 
     unsigned int maxSize = (sizeof(n) * 8 + 6) / 7;

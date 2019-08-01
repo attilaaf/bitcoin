@@ -617,6 +617,7 @@ public:
     unsigned int GetSigOpCount(const CScript &scriptSig) const;
 
     bool IsPayToScriptHash() const;
+    bool IsPayToPublicKeyHash() const;
     bool IsWitnessProgram(int &version, std::vector<uint8_t> &program) const;
 
     /** Called by IsStandardTx and P2SH/BIP62 VerifyScript (which makes it

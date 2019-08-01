@@ -8,21 +8,26 @@
 #include "chainparams.h"
 #include "config.h"
 #include "hash.h"
-#include "init.h"
+#include "init.h"`
 #include "pow.h"
 #include "random.h"
 #include "ui_interface.h"
 #include "uint256.h"
 #include "util.h"
-
+#include "validation.h"
+#include <string>
 #include <boost/thread.hpp>
-
+#include <chrono>
 #include <cstdint>
+// #include <pqxx/pqxx>
 
 static const char DB_COIN = 'C';
 static const char DB_COINS = 'c';
 static const char DB_BLOCK_FILES = 'f';
 static const char DB_TXINDEX = 't';
+static const char DB_SPENTINDEX = 'p';
+static const char DB_ADDRESSINDEX = 'a';
+static const char DB_ADDRESSUNSPENTINDEX = 'u';
 static const char DB_BLOCK_INDEX = 'b';
 
 static const char DB_BEST_BLOCK = 'B';
@@ -261,6 +266,305 @@ bool CBlockTreeDB::WriteTxIndex(
          it != vect.end(); it++)
         batch.Write(std::make_pair(DB_TXINDEX, it->first), it->second);
     return WriteBatch(batch);
+}
+
+bool CBlockTreeDB::ReadSpentIndex(CSpentIndexKey &key, CSpentIndexValue &value) {
+    return Read(std::make_pair(DB_SPENTINDEX, key), value);
+}
+
+bool CBlockTreeDB::UpdateSpentIndex(const std::vector<std::pair<CSpentIndexKey, CSpentIndexValue> >&vect) {
+    CDBBatch batch(*this);
+    for (std::vector<std::pair<CSpentIndexKey,CSpentIndexValue> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+        if (it->second.IsNull()) {
+            batch.Erase(std::make_pair(DB_SPENTINDEX, it->first));
+        } else {
+            batch.Write(std::make_pair(DB_SPENTINDEX, it->first), it->second);
+        }
+    }
+    return WriteBatch(batch);
+}
+
+bool CBlockTreeDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue > >&vect) {
+    CDBBatch batch(*this);
+    for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+        if (it->second.IsNull()) {
+            // std::cout << "isnull-------" << it->first.hashBytes.GetHex() << " tx: " << it->first.txhash.GetHex() << " output: " << it->first.index << std::endl;
+            batch.Erase(std::make_pair(DB_ADDRESSUNSPENTINDEX, it->first));
+        } else {
+            batch.Write(std::make_pair(DB_ADDRESSUNSPENTINDEX, it->first), it->second);
+        }
+    }
+    /*
+    try
+    {
+        auto begin1 = std::chrono::high_resolution_clock::now();
+
+
+        auto begin2 = std::chrono::high_resolution_clock::now();
+        int c = 0;
+
+        std::string queries;
+        for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+            if (it->second.IsNull()) {
+                queries += "DELETE FROM unspent WHERE hashbytes ='";
+                queries += it->first.hashBytes.GetHex();
+                queries += "' AND ";
+                queries += " txid='";
+                queries += it->first.txhash.GetHex();
+                queries += "' AND ";
+                queries += " index='";
+                queries += std::to_string(it->first.index);
+                queries += "' AND ";
+                queries += " address_type='";
+                queries += std::to_string(it->first.type);
+                queries += "'; ";
+                c++;
+                // std::cout << q1 << std::endl;
+            } else {
+                queries += "INSERT INTO unspent(hashbytes, txid, index, address_type, sats, script, height)  VALUES('";
+                queries += it->first.hashBytes.GetHex();
+                queries += "',";
+                queries += "'";
+                queries += it->first.txhash.GetHex();
+                queries += "',";
+                queries += "'";
+                queries += std::to_string(it->first.index);
+                queries += "',";
+                queries += "'";
+                queries += std::to_string(it->first.type);
+                queries += "',";
+                queries += "'";
+                queries += std::to_string(it->second.satoshis);
+                queries += "',";
+                queries += "'";
+                queries += HexStr(it->second.script.begin(), it->second.script.end());
+                queries += "',";
+                queries += "'";
+                queries += std::to_string(it->second.blockHeight) + "') ON CONFLICT (hashbytes, txid, index, address_type) DO NOTHING; ";
+
+                c++;
+            }
+        }
+
+        if (c > 0) {
+            pqxx::connection C("postgresql://postgres:password@addressindexdb.c8wlkihnverc.us-west-2.rds.amazonaws.com/addressindex_prod");
+            // pqxx::connection C("postgresql://postgres:yourpassword@localhost/sauron");
+            pqxx::work W(C);
+
+            W.exec(queries);
+            auto end2 = std::chrono::high_resolution_clock::now();
+            auto dur2 = end2 - begin2;
+            auto ms2 = std::chrono::duration_cast<std::chrono::milliseconds>(dur2).count();
+
+            W.commit();
+
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto dur1 = end1 - begin1;
+            auto ms1 = std::chrono::duration_cast<std::chrono::milliseconds>(dur1).count();
+            std::cout << "Total time saving index: " << ms1 << " Total time preparing: " << ms2 << " records: " << c <<  std::endl;
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << std::endl;
+        return false;
+    }*/
+
+    return WriteBatch(batch);
+}
+
+bool CBlockTreeDB::ReadAddressUnspentIndex(uint160 addressHash, int type,
+                                           std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs) {
+
+    boost::scoped_ptr<CDBIterator> pcursor(NewIterator());
+
+    pcursor->Seek(std::make_pair(DB_ADDRESSUNSPENTINDEX, CAddressIndexIteratorKey(type, addressHash)));
+
+    while (pcursor->Valid()) {
+        boost::this_thread::interruption_point();
+        std::pair<char,CAddressUnspentKey> key;
+        if (pcursor->GetKey(key) && key.first == DB_ADDRESSUNSPENTINDEX && key.second.hashBytes == addressHash) {
+            CAddressUnspentValue nValue;
+            if (pcursor->GetValue(nValue)) {
+                unspentOutputs.push_back(std::make_pair(key.second, nValue));
+                pcursor->Next();
+            } else {
+                return error("failed to get address unspent value");
+            }
+        } else {
+            break;
+        }
+    }
+
+    return true;
+}
+
+bool CBlockTreeDB::WriteAddressIndex(const std::vector<std::pair<CAddressIndexKey, int64_t > >&vect) {
+    CDBBatch batch(*this);
+    for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+        batch.Write(std::make_pair(DB_ADDRESSINDEX, it->first), it->second);
+    }
+    /*
+    try
+    {
+        auto begin1 = std::chrono::high_resolution_clock::now();
+        auto begin2 = std::chrono::high_resolution_clock::now();
+        int c = 0;
+        std::string queries;
+        for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+
+            queries += "INSERT INTO addrtx(hashbytes, txid, index, txindex, address_type, sats, spending, height)  VALUES('";
+            queries += it->first.hashBytes.GetHex();
+            queries += "',";
+
+            queries += "'";
+            queries += it->first.txhash.GetHex();
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.index);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.txindex);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.type);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->second);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.spending);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.blockHeight);
+            queries += "') ON CONFLICT (hashbytes, txid, index, spending) DO NOTHING; ";
+            c++;
+        }
+
+        if (c > 0) {
+            pqxx::connection C("postgresql://postgres:password@addressindexdb.c8wlkihnverc.us-west-2.rds.amazonaws.com/addressindex_prod");
+            // pqxx::connection C("postgresql://postgres:yourpassword@localhost/sauron");
+            pqxx::work W(C);
+
+            W.exec(queries);
+            auto end2 = std::chrono::high_resolution_clock::now();
+            auto dur2 = end2 - begin2;
+            auto ms2 = std::chrono::duration_cast<std::chrono::milliseconds>(dur2).count();
+
+            W.commit();
+
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto dur1 = end1 - begin1;
+            auto ms1 = std::chrono::duration_cast<std::chrono::milliseconds>(dur1).count();
+            std::cout << "Total time saving TX index: " << ms1 << " Total time preparing: " << ms2 << " records: " << c <<  std::endl;
+        }
+
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << std::endl;
+        return false;
+    }*/
+
+    return WriteBatch(batch);
+}
+
+bool CBlockTreeDB::EraseAddressIndex(const std::vector<std::pair<CAddressIndexKey, int64_t > >&vect) {
+    CDBBatch batch(*this);
+    for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+        batch.Erase(std::make_pair(DB_ADDRESSINDEX, it->first));
+     }
+    /*
+    try
+    {
+        auto begin1 = std::chrono::high_resolution_clock::now();
+        auto begin2 = std::chrono::high_resolution_clock::now();
+        int c = 0;
+        std::string queries;
+        for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+
+            queries += "DELETE FROM addrtx WHERE hashbytes ='";
+            queries += it->first.hashBytes.GetHex();
+            queries += "' AND ";
+            queries += " txid='";
+            queries += it->first.txhash.GetHex();
+            queries += "' AND ";
+            queries += " index='";
+            queries += std::to_string(it->first.index);
+            queries += "' AND ";
+            queries += " spending='";
+            queries += std::to_string(it->first.spending);
+            queries += "'; ";
+            // queries += std::to_string(it->second.blockHeight) + "') ON CONFLICT (hashbytes, txid, index) DO NOTHING; ";
+            c++;
+        }
+
+        if (c > 0) {
+            pqxx::connection C("postgresql://postgres:password@addressindexdb.c8wlkihnverc.us-west-2.rds.amazonaws.com/addressindex_prod");
+            // pqxx::connection C("postgresql://postgres:yourpassword@localhost/sauron");
+            pqxx::work W(C);
+
+            W.exec(queries);
+            auto end2 = std::chrono::high_resolution_clock::now();
+            auto dur2 = end2 - begin2;
+            auto ms2 = std::chrono::duration_cast<std::chrono::milliseconds>(dur2).count();
+
+            W.commit();
+
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto dur1 = end1 - begin1;
+            auto ms1 = std::chrono::duration_cast<std::chrono::milliseconds>(dur1).count();
+            std::cout << "Total time saving TX index: " << ms1 << " Total time preparing: " << ms2 << " records: " << c <<  std::endl;
+        }
+
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << std::endl;
+        return false;
+    }
+    */
+    return WriteBatch(batch);
+}
+
+bool CBlockTreeDB::ReadAddressIndex(uint160 addressHash, int type,
+                                    std::vector<std::pair<CAddressIndexKey, int64_t> > &addressIndex,
+                                    int start, int end) {
+
+    boost::scoped_ptr<CDBIterator> pcursor(NewIterator());
+
+    if (start > 0 && end > 0) {
+        pcursor->Seek(std::make_pair(DB_ADDRESSINDEX, CAddressIndexIteratorHeightKey(type, addressHash, start)));
+    } else {
+        pcursor->Seek(std::make_pair(DB_ADDRESSINDEX, CAddressIndexIteratorKey(type, addressHash)));
+    }
+
+    while (pcursor->Valid()) {
+        boost::this_thread::interruption_point();
+        std::pair<char,CAddressIndexKey> key;
+        if (pcursor->GetKey(key) && key.first == DB_ADDRESSINDEX && key.second.hashBytes == addressHash) {
+            if (end > 0 && key.second.blockHeight > end) {
+                break;
+            }
+            int64_t nValue;
+            if (pcursor->GetValue(nValue)) {
+                addressIndex.push_back(std::make_pair(key.second, nValue));
+                pcursor->Next();
+            } else {
+                return error("failed to get address index value");
+            }
+        } else {
+            break;
+        }
+    }
+
+    return true;
 }
 
 bool CBlockTreeDB::WriteFlag(const std::string &name, bool fValue) {
