@@ -349,10 +349,7 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
     entry.push_back(Pair("valueOut", ValueFromAmount(Amount(valueOut))));
 
     std::string strHex = EncodeHexTx(tx, RPCSerializationFlags());
-
-    if (fIncludeHex) {
-        entry.push_back(Pair("rawtx", strHex));
-    }
+    entry.push_back(Pair("rawtx", strHex));
 }
 
 static UniValue getrawtransaction(const Config &config,
@@ -481,7 +478,7 @@ static UniValue getrawtransaction(const Config &config,
     }
 
     UniValue result(UniValue::VOBJ);
-    result.push_back(Pair("hex", strHex));
+    // result.push_back(Pair("hex", strHex));
     TxToJSON2(config, *tx, hashBlock, result, true, true);
     return result;
 }
