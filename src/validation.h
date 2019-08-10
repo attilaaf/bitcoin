@@ -20,6 +20,7 @@
 #include "script/script_error.h"
 #include "sync.h"
 #include "versionbits.h"
+#include "spentindex.h"
 
 #include <algorithm>
 #include <atomic>
@@ -175,6 +176,7 @@ static const int64_t MAX_FEE_ESTIMATION_TIP_AGE = 3 * 60 * 60;
 static const bool DEFAULT_PERMIT_BAREMULTISIG = true;
 static const bool DEFAULT_CHECKPOINTS_ENABLED = true;
 static const bool DEFAULT_TXINDEX = false;
+static const bool DEFAULT_SPENTINDEX = false;
 static const unsigned int DEFAULT_BANSCORE_THRESHOLD = 100;
 
 /* Default settings for controlling P2P reading */
@@ -405,6 +407,11 @@ bool IsInitialBlockDownload();
  * by strFor.
  */
 std::string GetWarnings(const std::string &strFor);
+
+/**
+ * Get the spent index key if it is enabled
+ */
+bool GetSpentIndex(CSpentIndexKey &key, CSpentIndexValue &value);
 
 /**
  * Retrieve a transaction (from memory pool, or from disk, if possible).

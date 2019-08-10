@@ -251,6 +251,19 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
             in.push_back(Pair("coinbase", HexStr(txin.scriptSig.begin(),
                                                  txin.scriptSig.end())));
         } else {
+             // Add address and value info if spentindex enabled
+            CSpentIndexValue spentInfo;
+            CSpentIndexKey spentKey(txin.prevout.GetTxId(), txin.prevout.GetN());
+            if (GetSpentIndex(spentKey, spentInfo)) {
+                in.push_back(Pair("value", ValueFromAmount(spentInfo.satoshis)));
+                in.push_back(Pair("valueSat", spentInfo.satoshis.GetSatoshis()));
+                if (spentInfo.addressType == 1) {
+                    in.push_back(Pair("address", CBitcoinAddress(CKeyID(spentInfo.addressHash)).ToString()));
+                } else if (spentInfo.addressType == 2)  {
+                    in.push_back(Pair("address", CBitcoinAddress(CScriptID(spentInfo.addressHash)).ToString()));
+                }
+            }
+
             in.push_back(Pair("txid", txin.prevout.GetTxId().GetHex()));
             in.push_back(Pair("vout", int64_t(txin.prevout.GetN())));
             in.push_back(Pair("n", (int64_t)i));

@@ -41,6 +41,7 @@
 #include "versionbits.h"
 #include "warnings.h"
 #include "blockfileinfostore.h"
+#include "spentindex.h"
 
 #include <atomic>
 #include <sstream>
@@ -70,6 +71,7 @@ int nScriptCheckThreads = 0;
 std::atomic_bool fImporting(false);
 bool fReindex = false;
 bool fTxIndex = false;
+bool fSpentIndex = false;
 bool fHavePruned = false;
 bool fPruneMode = false;
 bool fIsBareMultisigStd = DEFAULT_PERMIT_BAREMULTISIG;
@@ -1079,6 +1081,25 @@ bool AcceptToMemoryPool(const Config &config, CTxMemPool &pool,
 }
 
 /**
+ *
+ * The spent index key and value to retrieve from mempool or block tree
+ *
+ */
+bool GetSpentIndex(CSpentIndexKey &key, CSpentIndexValue &value)
+{
+    if (!fSpentIndex)
+        return false;
+
+    if (mempool.getSpentIndex(key, value))
+        return true;
+
+    if (!pblocktree->ReadSpentIndex(key, value))
+        return false;
+
+    return true;
+}
+
+/**
  * Return transaction in txOut, and if it was found inside a block, its hash is
  * placed in hashBlock.
  */
@@ -1734,6 +1755,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
         return DISCONNECT_FAILED;
     }
 
+    std::vector<std::pair<CSpentIndexKey, CSpentIndexValue> > spentIndex;
     // Undo transactions in reverse order.
     size_t i = block.vtx.size();
     while (i-- > 0) {
@@ -1776,6 +1798,12 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
                 return DISCONNECT_FAILED;
             }
             fClean = fClean && res != DISCONNECT_UNCLEAN;
+
+            if (fSpentIndex) {
+                const CTxIn input = tx.vin[j];
+                // undo and delete the spent index
+                spentIndex.push_back(std::make_pair(CSpentIndexKey(input.prevout.GetTxId(), input.prevout.GetN()), CSpentIndexValue()));
+            }
         }
     }
 
@@ -2072,6 +2100,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
     std::vector<std::pair<uint256, CDiskTxPos>> vPos;
     vPos.reserve(block.vtx.size());
     blockundo.vtxundo.reserve(block.vtx.size() - 1);
+    std::vector<std::pair<CSpentIndexKey, CSpentIndexValue> > spentIndex;
 
     for (size_t i = 0; i < block.vtx.size(); i++) {
         const CTransaction &tx = *(block.vtx[i]);
@@ -2099,6 +2128,35 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
                                __func__),
                     REJECT_INVALID, "bad-txns-nonfinal");
             }
+            if (fSpentIndex)
+            {
+                for (size_t j = 0; j < tx.vin.size(); j++) {
+
+                    const CTxIn input = tx.vin[j];
+                    const CTxOut &prevout = view.GetOutputFor(tx.vin[j]);
+                    uint160 hashBytes;
+                    int addressType;
+
+                    if (prevout.scriptPubKey.IsPayToScriptHash()) {
+                        hashBytes = uint160(std::vector<unsigned char>(prevout.scriptPubKey.begin()+2, prevout.scriptPubKey.begin()+22));
+                        addressType = 2;
+                    } else if (prevout.scriptPubKey.IsPayToPublicKeyHash()) {
+                        hashBytes = uint160(std::vector<unsigned char>(prevout.scriptPubKey.begin()+3, prevout.scriptPubKey.begin()+23));
+                        addressType = 1;
+                    } else {
+                        hashBytes.SetNull();
+                        addressType = 0;
+                    }
+
+                    if (fSpentIndex) {
+                        // add the spent index to determine the txid and input that spent an output
+                        // and to find the amount and address from an input
+                        spentIndex.push_back(std::make_pair(CSpentIndexKey(input.prevout.GetTxId(), input.prevout.GetN()), CSpentIndexValue(tx.GetHash(), j, pindex->nHeight, prevout.nValue, addressType, hashBytes)));
+                    }
+                }
+
+            }
+
         }
 
         // GetTransactionSigOpCount counts 2 types of sigops:
@@ -2210,6 +2268,10 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
         return AbortNode(state, "Failed to write transaction index");
     }
 
+    if (fSpentIndex)
+        if (!pblocktree->UpdateSpentIndex(spentIndex))
+            return AbortNode(state, "Failed to write spent index");
+
     // add this block to the view's block chain
     view.SetBestBlock(pindex->GetBlockHash());
 
@@ -2316,7 +2378,7 @@ static bool FlushStateToDisk(const CChainParams &chainparams,
                 // Then update all block file information (which may refer to
                 // block and undo files).
                 {
-                    
+
                     std::vector<std::pair<int, const CBlockFileInfo *>> vFiles = pBlockFileInfoStore->GetAndClearDirtyFileInfo();
                     std::vector<const CBlockIndex *> vBlocks;
                     vBlocks.reserve(setDirtyBlockIndex.size());
@@ -3290,7 +3352,7 @@ bool CheckBlock(const Config &config, const CBlock &block,
     // Size limits.
     auto nMaxBlockSize = config.GetMaxBlockSize();
 
-    // Bail early if there is no way this block is of reasonable size.  
+    // Bail early if there is no way this block is of reasonable size.
     if ( MIN_TRANSACTION_SIZE > 0 && block.vtx.size () > (nMaxBlockSize/MIN_TRANSACTION_SIZE)){
         return state.DoS(100, false, REJECT_INVALID, "bad-blk-length", false,"size limits failed");
     }
@@ -3499,12 +3561,12 @@ static bool ContextualCheckBlock(const Config &config, const CBlock &block,
     }
 
     // Check if block has the right size. Maximum accepted block size changes
-    // according to predetermined schedule unless user has overriden this by 
-    // specifying -excessiveblocksize command line parameter 
+    // according to predetermined schedule unless user has overriden this by
+    // specifying -excessiveblocksize command line parameter
     const int64_t nMedianTimePast =
         pindexPrev == nullptr ? 0 : pindexPrev->GetMedianTimePast();
 
-    const uint64_t nMaxBlockSize = 
+    const uint64_t nMaxBlockSize =
         pindexPrev == nullptr ? config.GetMaxBlockSize() : config.GetMaxBlockSize(nMedianTimePast);
 
     const uint64_t currentBlockSize =
@@ -4080,6 +4142,10 @@ static bool LoadBlockIndexDB(const CChainParams &chainparams) {
     LogPrintf("%s: transaction index %s\n", __func__,
               fTxIndex ? "enabled" : "disabled");
 
+    // Check whether we have a spent index
+    pblocktree->ReadFlag("spentindex", fSpentIndex);
+    LogPrintf("%s: spent index %s\n", __func__, fSpentIndex ? "enabled" : "disabled");
+
     return true;
 }
 
@@ -4485,6 +4551,10 @@ bool InitBlockIndex(const Config &config) {
     // Use the provided setting for -txindex in the new database
     fTxIndex = gArgs.GetBoolArg("-txindex", DEFAULT_TXINDEX);
     pblocktree->WriteFlag("txindex", fTxIndex);
+
+    fSpentIndex = gArgs.GetBoolArg("-spentindex", DEFAULT_SPENTINDEX);
+    pblocktree->WriteFlag("spentindex", fSpentIndex);
+
     LogPrintf("Initializing databases...\n");
 
     // Only add the genesis block if not reindexing (in which case we reuse the
@@ -4524,7 +4594,7 @@ bool InitBlockIndex(const Config &config) {
 
 void ReindexAllBlockFiles(const Config &config, CBlockTreeDB *pblocktree, bool& fReindex)
 {
-    
+
     int nFile = 0;
     while (true) {
         CDiskBlockPos pos(nFile, 0);
