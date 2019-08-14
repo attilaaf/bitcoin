@@ -16,7 +16,7 @@ struct CSpentIndexKey {
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
+    inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(txid);
         READWRITE(outputIndex);
     }
@@ -48,11 +48,12 @@ struct CSpentIndexValue {
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
+    inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(txid);
         READWRITE(inputIndex);
         READWRITE(blockHeight);
-        READWRITE(satoshis);
+        int64_t a = satoshis.GetSatoshis();
+        READWRITE(a);
         READWRITE(addressType);
         READWRITE(addressHash);
     }
@@ -74,7 +75,7 @@ struct CSpentIndexValue {
         txid.SetNull();
         inputIndex = 0;
         blockHeight = 0;
-        satoshis = 0;
+        satoshis = Amount(0);
         addressType = 0;
         addressHash.SetNull();
     }

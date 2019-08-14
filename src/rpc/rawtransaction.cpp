@@ -258,9 +258,9 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
                 in.push_back(Pair("value", ValueFromAmount(spentInfo.satoshis)));
                 in.push_back(Pair("valueSat", spentInfo.satoshis.GetSatoshis()));
                 if (spentInfo.addressType == 1) {
-                    in.push_back(Pair("address", CBitcoinAddress(CKeyID(spentInfo.addressHash)).ToString()));
+                    // in.push_back(Pair("address", CBitcoinAddress(CKeyID(spentInfo.addressHash)).ToString()));
                 } else if (spentInfo.addressType == 2)  {
-                    in.push_back(Pair("address", CBitcoinAddress(CScriptID(spentInfo.addressHash)).ToString()));
+                   //  in.push_back(Pair("address", CBitcoinAddress(CScriptID(spentInfo.addressHash)).ToString()));
                 }
             }
 
@@ -299,8 +299,9 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
                 throw new std::exception();
             }
             auto vinVoutAddr = voutAddrMap.find(int64_t(txin.prevout.GetN()));
-            if ( vinVoutAddr->second.size()) {
+            if (vinVoutAddr->second.size()) {
                 in.push_back(Pair("addr", EncodeDestination(vinVoutAddr->second.at(0))));
+                in.push_back(Pair("address", EncodeDestination(vinVoutAddr->second.at(0))));
             }
         }
         in.push_back(Pair("sequence", (int64_t)txin.nSequence));
@@ -321,6 +322,15 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
         UniValue o(UniValue::VOBJ);
         ScriptPubKeyToJSON2(config, txout.scriptPubKey, o, fIncludeAsm, fIncludeHex);
         out.push_back(Pair("scriptPubKey", o));
+        // Add spent information if spentindex is enabled
+        CSpentIndexValue spentInfo;
+        CSpentIndexKey spentKey(tx.GetHash(), i);
+        if (GetSpentIndex(spentKey, spentInfo)) {
+            out.push_back(Pair("spentTxId", spentInfo.txid.GetHex()));
+            out.push_back(Pair("spentIndex", (int)spentInfo.inputIndex));
+            out.push_back(Pair("spentHeight", spentInfo.blockHeight));
+        }
+
         vout.push_back(out);
     }
 
