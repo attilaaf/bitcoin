@@ -1027,6 +1027,16 @@ static bool AcceptToMemoryPoolWorker(
         // Store transaction in memory.
         pool.addUnchecked(txid, entry, setAncestors, validForFeeEstimation);
 
+        // Add memory address index
+        if (fAddressIndex) {
+            pool.addAddressIndex(entry, view);
+        }
+
+        // Add memory spent index
+        if (fSpentIndex) {
+            pool.addSpentIndex(entry, view);
+        }
+
         // Trim mempool and check if tx was trimmed.
         if (!fOverrideMempoolLimit) {
             LimitMempoolSize(
@@ -1756,13 +1766,46 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
         return DISCONNECT_FAILED;
     }
 
+    std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
+    std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > addressUnspentIndex;
     std::vector<std::pair<CSpentIndexKey, CSpentIndexValue> > spentIndex;
+
     // Undo transactions in reverse order.
     size_t i = block.vtx.size();
     while (i-- > 0) {
         const CTransaction &tx = *(block.vtx[i]);
         uint256 txid = tx.GetId();
 
+        if (fAddressIndex) {
+
+            for (unsigned int k = tx.vout.size(); k-- > 0;) {
+                const CTxOut &out = tx.vout[k];
+
+                if (out.scriptPubKey.IsPayToScriptHash()) {
+                    std::vector<unsigned char> hashBytes(out.scriptPubKey.begin()+2, out.scriptPubKey.begin()+22);
+
+                    // undo receiving activity
+                    addressIndex.push_back(std::make_pair(CAddressIndexKey(2, uint160(hashBytes), pindex->nHeight, i, tx.GetHash(), k, false), out.nValue.GetSatoshis()));
+
+                    // undo unspent index
+                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(2, uint160(hashBytes), tx.GetHash(), k), CAddressUnspentValue()));
+
+                } else if (out.scriptPubKey.IsPayToPublicKeyHash()) {
+                    std::vector<unsigned char> hashBytes(out.scriptPubKey.begin()+3, out.scriptPubKey.begin()+23);
+
+                    // undo receiving activity
+                    addressIndex.push_back(std::make_pair(CAddressIndexKey(1, uint160(hashBytes), pindex->nHeight, i, tx.GetHash(), k, false), out.nValue.GetSatoshis()));
+
+                    // undo unspent index
+                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(1, uint160(hashBytes), tx.GetHash(), k), CAddressUnspentValue()));
+
+                } else {
+                    continue;
+                }
+
+            }
+
+        }
         // Check that all outputs are available and match the outputs in the
         // block itself exactly.
         for (size_t o = 0; o < tx.vout.size(); o++) {
@@ -1800,10 +1843,42 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
             }
             fClean = fClean && res != DISCONNECT_UNCLEAN;
 
+            const CTxIn input = tx.vin[j];
+
             if (fSpentIndex) {
-                const CTxIn input = tx.vin[j];
                 // undo and delete the spent index
+                // Todo: WTF bitpay didn't do anything with this!!!
+                // It's like the spentIndex is not restored
+                // This may not be a problem if all utxo's get spent
+                // But what if some tx's are missed in a huge re-org???
+                // See all of https://github.com/bitpay/bitcoin/commit/9babc7ff9fa19b93cf7b3ef2f73ec4e66f8c132f
+                // I've added the UpdateSpentIndex below as it should be there
                 spentIndex.push_back(std::make_pair(CSpentIndexKey(input.prevout.GetTxId(), input.prevout.GetN()), CSpentIndexValue()));
+            }
+
+            if (fAddressIndex) {
+                const CTxOut &prevout = view.GetOutputFor(tx.vin[j]);
+                if (prevout.scriptPubKey.IsPayToScriptHash()) {
+                    std::vector<unsigned char> hashBytes(prevout.scriptPubKey.begin()+2, prevout.scriptPubKey.begin()+22);
+
+                    // undo spending activity
+                    addressIndex.push_back(std::make_pair(CAddressIndexKey(2, uint160(hashBytes), pindex->nHeight, i, tx.GetHash(), j, true), prevout.nValue.GetSatoshis() * -1));
+
+                    // restore unspent index
+                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(2, uint160(hashBytes), input.prevout.GetTxId(), input.prevout.GetN()), CAddressUnspentValue(prevout.nValue, prevout.scriptPubKey, undo.GetHeight())));
+
+                } else if (prevout.scriptPubKey.IsPayToPublicKeyHash()) {
+                    std::vector<unsigned char> hashBytes(prevout.scriptPubKey.begin()+3, prevout.scriptPubKey.begin()+23);
+
+                    // undo spending activity
+                    addressIndex.push_back(std::make_pair(CAddressIndexKey(1, uint160(hashBytes), pindex->nHeight, i, tx.GetHash(), j, true), prevout.nValue.GetSatoshis() * -1));
+
+                    // restore unspent index
+                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(1, uint160(hashBytes), input.prevout.GetTxId(), input.prevout.GetN()), CAddressUnspentValue(prevout.nValue, prevout.scriptPubKey, undo.GetHeight())));
+
+                } else {
+                    continue;
+                }
             }
         }
     }
@@ -1811,6 +1886,26 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
     // Move best block pointer to previous block.
     view.SetBestBlock(block.hashPrevBlock);
 
+    if (fSpentIndex) {
+        if (!pblocktree->UpdateSpentIndex(spentIndex)) {
+            CValidationState state;
+            AbortNode(state, "Failed to undo write spent index");
+            return DISCONNECT_UNCLEAN;
+        }
+    }
+
+    if (fAddressIndex) {
+        if (!pblocktree->EraseAddressIndex(addressIndex)) {
+            CValidationState state;
+            AbortNode(state, "Failed to delete address index");
+            return DISCONNECT_UNCLEAN;
+        }
+        if (!pblocktree->UpdateAddressUnspentIndex(addressUnspentIndex)) {
+            CValidationState state;
+            AbortNode(state, "Failed to undo write address unspent index");
+            return DISCONNECT_UNCLEAN;
+        }
+    }
     return fClean ? DISCONNECT_OK : DISCONNECT_UNCLEAN;
 }
 
@@ -4608,6 +4703,9 @@ bool InitBlockIndex(const Config &config) {
 
     fSpentIndex = gArgs.GetBoolArg("-spentindex", DEFAULT_SPENTINDEX);
     pblocktree->WriteFlag("spentindex", fSpentIndex);
+
+    fAddressIndex = gArgs.GetBoolArg("-addressindex", DEFAULT_ADDRESSINDEX);
+    pblocktree->WriteFlag("addressindex", fAddressIndex);
 
     LogPrintf("Initializing databases...\n");
 

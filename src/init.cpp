@@ -467,6 +467,7 @@ std::string HelpMessage(HelpMessageMode mode) {
                               DEFAULT_TXINDEX));
 
     strUsage += HelpMessageOpt("-spentindex", strprintf(_("Maintain a full spent index, used to query the spending txid and input index for an outpoint (default: %u)"), DEFAULT_SPENTINDEX));
+    strUsage += HelpMessageOpt("-addressindex", strprintf(_("Maintain a full address index, used to query for the balance, txids and unspent outputs for addresses (default: %u)"), DEFAULT_ADDRESSINDEX));
 
     strUsage += HelpMessageGroup(_("Connection options:"));
     strUsage += HelpMessageOpt(
@@ -2158,11 +2159,20 @@ bool AppInitMain(Config &config, boost::thread_group &threadGroup,
     // total cache cannot be greater than nMaxDbcache
     nTotalCache = std::min(nTotalCache, nMaxDbCache << 20);
     int64_t nBlockTreeDBCache = nTotalCache / 8;
-    nBlockTreeDBCache = std::min(nBlockTreeDBCache,
-                                 (gArgs.GetBoolArg("-txindex", DEFAULT_TXINDEX)
-                                      ? nMaxBlockDBAndTxIndexCache
-                                      : nMaxBlockDBCache)
-                                     << 20);
+    /**
+     * Is this if branch actually needed? What is it for?
+     * Copied from Bitpay addressindex codebase
+     **/
+    if (gArgs.GetArg("-addressindex", DEFAULT_ADDRESSINDEX) || gArgs.GetArg("-spentindex", DEFAULT_SPENTINDEX)) {
+        // enable 3/4 of the cache if addressindex and/or spentindex is enabled
+        nBlockTreeDBCache = nTotalCache * 3 / 4;
+    } else {
+        nBlockTreeDBCache = std::min(nBlockTreeDBCache,
+                                    (gArgs.GetBoolArg("-txindex", DEFAULT_TXINDEX)
+                                        ? nMaxBlockDBAndTxIndexCache
+                                        : nMaxBlockDBCache)
+                                        << 20);
+    }
     nTotalCache -= nBlockTreeDBCache;
     // use 25%-50% of the remainder for disk cache
     int64_t nCoinDBCache =

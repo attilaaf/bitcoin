@@ -177,6 +177,7 @@ static const bool DEFAULT_PERMIT_BAREMULTISIG = true;
 static const bool DEFAULT_CHECKPOINTS_ENABLED = true;
 static const bool DEFAULT_TXINDEX = false;
 static const bool DEFAULT_SPENTINDEX = false;
+static const bool DEFAULT_ADDRESSINDEX = false;
 static const unsigned int DEFAULT_BANSCORE_THRESHOLD = 100;
 
 /* Default settings for controlling P2P reading */
