@@ -41,12 +41,12 @@ class CTxnSendingDetails
 * Comparator for transaction priority.
 */
 struct CompareTxnSendingDetails
-{   
+{
     CTxMemPool* mMempool {nullptr};
     CompareTxnSendingDetails(CTxMemPool* mp) : mMempool{mp} {}
 
     bool operator()(const CTxnSendingDetails& a, const CTxnSendingDetails& b)
-    {   
+    {
         return mMempool->CompareDepthAndScoreUnlocked(b.getInv().hash, a.getInv().hash);
     }
 };

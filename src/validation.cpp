@@ -1891,7 +1891,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
                     addressIndex.push_back(std::make_pair(CAddressIndexKey(2, uint160(hashBytes), pindex->nHeight, i, tx.GetHash(), j, true), prevout.nValue.GetSatoshis() * -1));
 
                     // restore unspent index
-                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(2, uint160(hashBytes), input.prevout.GetTxId(), input.prevout.GetN()), CAddressUnspentValue(prevout.nValue, prevout.scriptPubKey, undo.GetHeight())));
+                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(2, uint160(hashBytes), input.prevout.GetTxId(), input.prevout.GetN()), CAddressUnspentValue(prevout.nValue.GetSatoshis(), prevout.scriptPubKey, undo.GetHeight())));
 
                 } else if (prevout.scriptPubKey.IsPayToPublicKeyHash()) {
                     std::vector<unsigned char> hashBytes(prevout.scriptPubKey.begin()+3, prevout.scriptPubKey.begin()+23);
@@ -1900,7 +1900,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
                     addressIndex.push_back(std::make_pair(CAddressIndexKey(1, uint160(hashBytes), pindex->nHeight, i, tx.GetHash(), j, true), prevout.nValue.GetSatoshis() * -1));
 
                     // restore unspent index
-                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(1, uint160(hashBytes), input.prevout.GetTxId(), input.prevout.GetN()), CAddressUnspentValue(prevout.nValue, prevout.scriptPubKey, undo.GetHeight())));
+                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(1, uint160(hashBytes), input.prevout.GetTxId(), input.prevout.GetN()), CAddressUnspentValue(prevout.nValue.GetSatoshis(), prevout.scriptPubKey, undo.GetHeight())));
 
                 } else {
                     continue;
@@ -2336,7 +2336,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
                     addressIndex.push_back(std::make_pair(CAddressIndexKey(2, uint160(hashBytes), pindex->nHeight, i, tx.GetHash(), k, false), out.nValue.GetSatoshis()));
 
                     // record unspent output
-                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(2, uint160(hashBytes), tx.GetHash(), k), CAddressUnspentValue(out.nValue, out.scriptPubKey, pindex->nHeight)));
+                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(2, uint160(hashBytes), tx.GetHash(), k), CAddressUnspentValue(out.nValue.GetSatoshis(), out.scriptPubKey, pindex->nHeight)));
 
                 } else if (out.scriptPubKey.IsPayToPublicKeyHash()) {
                     std::vector<unsigned char> hashBytes(out.scriptPubKey.begin()+3, out.scriptPubKey.begin()+23);
@@ -2345,7 +2345,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
                     addressIndex.push_back(std::make_pair(CAddressIndexKey(1, uint160(hashBytes), pindex->nHeight, i, tx.GetHash(), k, false), out.nValue.GetSatoshis()));
 
                     // record unspent output
-                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(1, uint160(hashBytes), tx.GetHash(), k), CAddressUnspentValue(out.nValue, out.scriptPubKey, pindex->nHeight)));
+                    addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(1, uint160(hashBytes), tx.GetHash(), k), CAddressUnspentValue(out.nValue.GetSatoshis(), out.scriptPubKey, pindex->nHeight)));
 
                 } else {
                     continue;

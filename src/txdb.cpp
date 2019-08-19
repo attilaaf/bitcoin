@@ -8,12 +8,13 @@
 #include "chainparams.h"
 #include "config.h"
 #include "hash.h"
-#include "init.h"
+#include "init.h"`
 #include "pow.h"
 #include "random.h"
 #include "ui_interface.h"
 #include "uint256.h"
 #include "util.h"
+#include "validation.h"
 
 #include <boost/thread.hpp>
 

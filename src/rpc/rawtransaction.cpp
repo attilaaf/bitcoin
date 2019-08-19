@@ -1568,23 +1568,27 @@ static UniValue sendrawtransaction(const Config &config,
     return txid.GetHex();
 }
 
-
 bool getAddressFromIndex(const int &type, const uint160 &hash, std::string &address)
 {
+    CTxDestination dest;
+
     if (type == 2) {
-        address = CBitcoinAddress(CScriptID(hash)).ToString();
+        dest = CScriptID(hash);
     } else if (type == 1) {
-        address = CBitcoinAddress(CKeyID(hash)).ToString();
+        dest = CKeyID(hash);
     } else {
         return false;
     }
+
+    address = EncodeBase58Addr(dest, Params());
     return true;
 }
 
 bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint160, int> > &addresses)
 {
     if (params[0].isStr()) {
-        CBitcoinAddress address(params[0].get_str());
+        CBase58Data address;
+        address.SetString(params[0].get_str());
         uint160 hashBytes;
         int type = 0;
         if (!address.GetIndexKey(hashBytes, type)) {
@@ -1601,8 +1605,8 @@ bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint16
         std::vector<UniValue> values = addressValues.getValues();
 
         for (std::vector<UniValue>::iterator it = values.begin(); it != values.end(); ++it) {
-
-            CBitcoinAddress address(it->get_str());
+            CBase58Data address;
+            address.SetString(it->get_str());
             uint160 hashBytes;
             int type = 0;
             if (!address.GetIndexKey(hashBytes, type)) {
@@ -1627,10 +1631,10 @@ bool timestampSort(std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> a,
     return a.second.time < b.second.time;
 }
 
-
-UniValue getaddressutxos(const UniValue& params, bool fHelp)
-{
-    if (fHelp || params.size() != 1)
+static UniValue getaddressutxos(const Config &config,
+                                  const JSONRPCRequest &request) {
+    if (request.fHelp || request.params.size() < 3  ||
+        request.params.size() > 3 )
         throw std::runtime_error(
             "getaddressutxos\n"
             "\nReturns all unspent outputs for an address (requires addressindex to be enabled).\n"
@@ -1660,8 +1664,8 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
             );
 
     bool includeChainInfo = false;
-    if (params[0].isObject()) {
-        UniValue chainInfo = find_value(params[0].get_obj(), "chainInfo");
+    if (request.params[0].isObject()) {
+        UniValue chainInfo = find_value(request.params[0].get_obj(), "chainInfo");
         if (chainInfo.isBool()) {
             includeChainInfo = chainInfo.get_bool();
         }
@@ -1669,7 +1673,7 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
 
     std::vector<std::pair<uint160, int> > addresses;
 
-    if (!getAddressesFromParams(params, addresses)) {
+    if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
@@ -1696,7 +1700,7 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
         output.push_back(Pair("txid", it->first.txhash.GetHex()));
         output.push_back(Pair("outputIndex", (int)it->first.index));
         output.push_back(Pair("script", HexStr(it->second.script.begin(), it->second.script.end())));
-        output.push_back(Pair("satoshis", it->second.satoshis.GetSatoshis()));
+        output.push_back(Pair("satoshis", it->second.satoshis));
         output.push_back(Pair("height", it->second.blockHeight));
         utxos.push_back(output);
     }
@@ -1714,9 +1718,9 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
     }
 }
 
-UniValue getaddressdeltas(const UniValue& params, bool fHelp)
-{
-    if (fHelp || params.size() != 1 || !params[0].isObject())
+static UniValue getaddressdeltas(const Config &config,
+                                  const JSONRPCRequest &request) {
+    if (request.fHelp || request.params.size() != 1 || !request.params[0].isObject())
         throw std::runtime_error(
             "getaddressdeltas\n"
             "\nReturns all changes for an address (requires addressindex to be enabled).\n"
@@ -1747,10 +1751,10 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
         );
 
 
-    UniValue startValue = find_value(params[0].get_obj(), "start");
-    UniValue endValue = find_value(params[0].get_obj(), "end");
+    UniValue startValue = find_value(request.params[0].get_obj(), "start");
+    UniValue endValue = find_value(request.params[0].get_obj(), "end");
 
-    UniValue chainInfo = find_value(params[0].get_obj(), "chainInfo");
+    UniValue chainInfo = find_value(request.params[0].get_obj(), "chainInfo");
     bool includeChainInfo = false;
     if (chainInfo.isBool()) {
         includeChainInfo = chainInfo.get_bool();
@@ -1772,7 +1776,7 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
 
     std::vector<std::pair<uint160, int> > addresses;
 
-    if (!getAddressesFromParams(params, addresses)) {
+    if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
@@ -1839,9 +1843,11 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
     }
 }
 
-UniValue getaddressbalance(const UniValue& params, bool fHelp)
-{
-    if (fHelp || params.size() != 1)
+
+static UniValue getaddressbalance(const Config &config,
+                                  const JSONRPCRequest &request) {
+
+    if (request.fHelp || request.params.size() != 1)
         throw std::runtime_error(
             "getaddressbalance\n"
             "\nReturns the balance for an address(es) (requires addressindex to be enabled).\n"
@@ -1865,7 +1871,7 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
 
     std::vector<std::pair<uint160, int> > addresses;
 
-    if (!getAddressesFromParams(params, addresses)) {
+    if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
@@ -1895,9 +1901,10 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
 
 }
 
-UniValue getaddresstxids(const UniValue& params, bool fHelp)
-{
-    if (fHelp || params.size() != 1)
+static UniValue getaddresstxids(const Config &config,
+                                  const JSONRPCRequest &request) {
+
+    if (request.fHelp || request.params.size() != 1)
         throw std::runtime_error(
             "getaddresstxids\n"
             "\nReturns the txids for an address(es) (requires addressindex to be enabled).\n"
@@ -1923,15 +1930,15 @@ UniValue getaddresstxids(const UniValue& params, bool fHelp)
 
     std::vector<std::pair<uint160, int> > addresses;
 
-    if (!getAddressesFromParams(params, addresses)) {
+    if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
     int start = 0;
     int end = 0;
-    if (params[0].isObject()) {
-        UniValue startValue = find_value(params[0].get_obj(), "start");
-        UniValue endValue = find_value(params[0].get_obj(), "end");
+    if (request.params[0].isObject()) {
+        UniValue startValue = find_value(request.params[0].get_obj(), "start");
+        UniValue endValue = find_value(request.params[0].get_obj(), "end");
         if (startValue.isNum() && endValue.isNum()) {
             start = startValue.get_int();
             end = endValue.get_int();
@@ -1991,10 +1998,9 @@ static const CRPCCommand commands[] = {
     { "rawtransactions",    "getrawtransactions",     getrawtransactions,     true,  {"txids", "includeAsm", "includeHex"} },
     { "blockchain",         "gettxoutproof",          gettxoutproof,          true,  {"txids", "blockhash"} },
     { "blockchain",         "verifytxoutproof",       verifytxoutproof,       true,  {"proof"} },
-    { "address",            "getaddresstxids",        getaddresstxids,        true,  {"addresses"} },
-    { "blockchain",         "getaddressbalance",      getaddressbalance,      true,  {"addresses"} },
-    { "blockchain",         "getaddressutxos",        getaddressutxos,        true,  {"addresses", "chaininfo"} },
-    { "blockchain",         "verifytxoutproof",       verifytxoutproof,       true,  {"proof"} },
+    { "address",            "getaddresstxids",        getaddresstxids,        true,  {"addresses", "start", "end"} },
+    { "address",            "getaddressbalance",      getaddressbalance,      true,  {"addresses"} },
+    { "address",            "getaddressutxos",        getaddressutxos,        true,  {"addresses", "chaininfo"} }
 };
 // clang-format on
 

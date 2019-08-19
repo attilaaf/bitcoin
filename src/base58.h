@@ -80,13 +80,13 @@ protected:
         vector_uchar;
     vector_uchar vchData;
 
-    CBase58Data();
     void SetData(const std::vector<uint8_t> &vchVersionIn, const void *pdata,
                  size_t nSize);
     void SetData(const std::vector<uint8_t> &vchVersionIn,
                  const uint8_t *pbegin, const uint8_t *pend);
 
 public:
+    CBase58Data();
     bool SetString(const char *psz, unsigned int nVersionBytes = 1);
     bool SetString(const std::string &str);
     std::string ToString() const;
@@ -103,6 +103,11 @@ public:
     }
     bool operator<(const CBase58Data &b58) const { return CompareTo(b58) < 0; }
     bool operator>(const CBase58Data &b58) const { return CompareTo(b58) > 0; }
+
+    bool IsValid() const;
+    bool IsValid(const CChainParams &params) const;
+
+    bool GetIndexKey(uint160& hashBytes, int& type) const;
 };
 
 /**

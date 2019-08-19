@@ -45,6 +45,9 @@ class CTxUndo;
 class CValidationInterface;
 class CValidationState;
 struct ChainTxData;
+struct CAddressIndexKey;
+struct CAddressUnspentKey;
+struct CAddressUnspentValue;
 
 struct PrecomputedTransactionData;
 struct LockPoints;
@@ -413,6 +416,16 @@ std::string GetWarnings(const std::string &strFor);
  * Get the spent index key if it is enabled
  */
 bool GetSpentIndex(CSpentIndexKey &key, CSpentIndexValue &value);
+
+/**
+ * Get address indexes
+ **/
+bool GetAddressIndex(uint160 addressHash, int type,
+                     std::vector<std::pair<CAddressIndexKey, int64_t> > &addressIndex,
+                     int start = 0, int end = 0);
+
+bool GetAddressUnspent(uint160 addressHash, int type,
+                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
 
 /**
  * Retrieve a transaction (from memory pool, or from disk, if possible).
@@ -812,7 +825,7 @@ struct CAddressUnspentKey {
 };
 
 struct CAddressUnspentValue {
-    Amount satoshis;
+    int64_t satoshis;
     CScript script;
     int blockHeight;
 
@@ -825,7 +838,7 @@ struct CAddressUnspentValue {
         READWRITE(blockHeight);
     }
 
-    CAddressUnspentValue(Amount sats, CScript scriptPubKey, int height) {
+    CAddressUnspentValue(int64_t sats, CScript scriptPubKey, int height) {
         satoshis = sats;
         script = scriptPubKey;
         blockHeight = height;
@@ -836,13 +849,13 @@ struct CAddressUnspentValue {
     }
 
     void SetNull() {
-        satoshis = Amount(-1);
+        satoshis = -1;
         script.clear();
         blockHeight = 0;
     }
 
     bool IsNull() const {
-        return (satoshis.GetSatoshis() == -1);
+        return (satoshis == -1);
     }
 };
 

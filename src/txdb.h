@@ -18,6 +18,12 @@
 class CBlockIndex;
 class CCoinsViewDBCursor;
 class uint256;
+
+struct CAddressUnspentKey;
+struct CAddressUnspentValue;
+struct CAddressIndexKey;
+struct CAddressIndexIteratorKey;
+struct CAddressIndexIteratorHeightKey;
 struct CSpentIndexKey;
 struct CSpentIndexValue;
 
