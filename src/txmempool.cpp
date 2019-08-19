@@ -470,6 +470,7 @@ bool CTxMemPool::addUnchecked(const uint256 &hash, const CTxMemPoolEntry &entry,
     return true;
 }
 
+/*
 void CTxMemPool::addAddressIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view)
 {
     LOCK(cs);
@@ -543,7 +544,7 @@ bool CTxMemPool::removeAddressIndex(const uint256 txhash)
 
     return true;
 }
-
+*/
 void CTxMemPool::addSpentIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view)
 {
     LOCK(cs);
