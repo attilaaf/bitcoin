@@ -329,6 +329,11 @@ void TxToJSON2(const Config &config, const CTransaction &tx,
             out.push_back(Pair("spentTxId", spentInfo.txid.GetHex()));
             out.push_back(Pair("spentIndex", (int)spentInfo.inputIndex));
             out.push_back(Pair("spentHeight", spentInfo.blockHeight));
+        } else {
+            UniValue o(UniValue::VType::VNULL);
+            out.push_back(Pair("spentTxId", o));
+            out.push_back(Pair("spentIndex", o));
+            out.push_back(Pair("spentHeight", o));
         }
 
         vout.push_back(out);
