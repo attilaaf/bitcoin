@@ -1028,11 +1028,10 @@ static bool AcceptToMemoryPoolWorker(
         pool.addUnchecked(txid, entry, setAncestors, validForFeeEstimation);
 
         // Add memory address index
-        /*
+
         if (fAddressIndex) {
             pool.addAddressIndex(entry, view);
         }
-        */
 
         // Add memory spent index
         if (fSpentIndex) {
@@ -1792,8 +1791,8 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
         return DISCONNECT_FAILED;
     }
 
-    // std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
-    // std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > addressUnspentIndex;
+    std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
+    std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > addressUnspentIndex;
     std::vector<std::pair<CSpentIndexKey, CSpentIndexValue> > spentIndex;
 
     // Undo transactions in reverse order.
@@ -1802,7 +1801,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
         const CTransaction &tx = *(block.vtx[i]);
         uint256 txid = tx.GetId();
 
-        /*if (fAddressIndex) {
+        if (fAddressIndex) {
 
             for (unsigned int k = tx.vout.size(); k-- > 0;) {
                 const CTxOut &out = tx.vout[k];
@@ -1831,7 +1830,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
 
             }
 
-        }*/
+        }
         // Check that all outputs are available and match the outputs in the
         // block itself exactly.
         for (size_t o = 0; o < tx.vout.size(); o++) {
@@ -1882,7 +1881,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
                 spentIndex.push_back(std::make_pair(CSpentIndexKey(input.prevout.GetTxId(), input.prevout.GetN()), CSpentIndexValue()));
             }
 
-            /*if (fAddressIndex) {
+            if (fAddressIndex) {
                 const CTxOut &prevout = view.GetOutputFor(tx.vin[j]);
                 if (prevout.scriptPubKey.IsPayToScriptHash()) {
                     std::vector<unsigned char> hashBytes(prevout.scriptPubKey.begin()+2, prevout.scriptPubKey.begin()+22);
@@ -1905,7 +1904,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
                 } else {
                     continue;
                 }
-            }*/
+            }
         }
     }
 
@@ -1920,7 +1919,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
         }
     }
 
-    /*if (fAddressIndex) {
+    if (fAddressIndex) {
         if (!pblocktree->EraseAddressIndex(addressIndex)) {
             CValidationState state;
             AbortNode(state, "Failed to delete address index");
@@ -1931,7 +1930,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
             AbortNode(state, "Failed to undo write address unspent index");
             return DISCONNECT_UNCLEAN;
         }
-    }*/
+    }
     return fClean ? DISCONNECT_OK : DISCONNECT_UNCLEAN;
 }
 
@@ -2272,13 +2271,13 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
                         addressType = 0;
                     }
 
-                    /*if (fAddressIndex && addressType > 0) {
+                    if (fAddressIndex && addressType > 0) {
                         // record spending activity
                         addressIndex.push_back(std::make_pair(CAddressIndexKey(addressType, hashBytes, pindex->nHeight, i, tx.GetHash(), j, true), prevout.nValue.GetSatoshis() * -1));
 
                         // remove address from unspent index
                         addressUnspentIndex.push_back(std::make_pair(CAddressUnspentKey(addressType, hashBytes, input.prevout.GetTxId(), input.prevout.GetN()), CAddressUnspentValue()));
-                    }*/
+                    }
 
                     if (fSpentIndex) {
                         // add the spent index to determine the txid and input that spent an output
@@ -2324,7 +2323,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
             control.Add(vChecks);
         }
 
-        /*
+
         if (fAddressIndex) {
             for (unsigned int k = 0; k < tx.vout.size(); k++) {
                 const CTxOut &out = tx.vout[k];
@@ -2353,7 +2352,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
 
             }
         }
-        */
+
 
         CTxUndo undoDummy;
         if (i > 0) {
@@ -2431,7 +2430,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
         return AbortNode(state, "Failed to write transaction index");
     }
 
-    /*
+
     if (fAddressIndex) {
         if (!pblocktree->WriteAddressIndex(addressIndex)) {
             return AbortNode(state, "Failed to write address index");
@@ -2441,7 +2440,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
             return AbortNode(state, "Failed to write address unspent index");
         }
     }
-    */
+
     if (fSpentIndex)
         if (!pblocktree->UpdateSpentIndex(spentIndex))
             return AbortNode(state, "Failed to write spent index");
@@ -4733,8 +4732,8 @@ bool InitBlockIndex(const Config &config) {
     fSpentIndex = gArgs.GetBoolArg("-spentindex", DEFAULT_SPENTINDEX);
     pblocktree->WriteFlag("spentindex", fSpentIndex);
 
-    // fAddressIndex = gArgs.GetBoolArg("-addressindex", DEFAULT_ADDRESSINDEX);
-    // pblocktree->WriteFlag("addressindex", fAddressIndex);
+    fAddressIndex = gArgs.GetBoolArg("-addressindex", DEFAULT_ADDRESSINDEX);
+    pblocktree->WriteFlag("addressindex", fAddressIndex);
 
     LogPrintf("Initializing databases...\n");
 

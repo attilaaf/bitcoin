@@ -1901,6 +1901,90 @@ static UniValue getaddressbalance(const Config &config,
 
 }
 
+static UniValue getaddresstxidsoffsets(const Config &config,
+                                  const JSONRPCRequest &request) {
+
+    if (request.fHelp || request.params.size() != 1)
+        throw std::runtime_error(
+            "getaddresstxidsoffsets\n"
+            "\nReturns the txids for an address(es) with start and end offsets (requires addressindex to be enabled).\n"
+            "\nArguments:\n"
+            "{\n"
+            "  \"addresses\"\n"
+            "    [\n"
+            "      \"address\"  (string) The base58check encoded address\n"
+            "      ,...\n"
+            "    ]\n"
+            "  \"from\" (number) The start index\n"
+            "  \"to\" (number) The end index\n"
+            "}\n"
+            "\nResult:\n"
+            "[\n"
+            "  \"transactionid\"  (string) The transaction id\n"
+            "  ,...\n"
+            "]\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getaddresstxidsoffsets", "'{\"addresses\": [\"12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX\"], \"from\": 0, \"to\": 500}'")
+            + HelpExampleRpc("getaddresstxidsoffsets", "{\"addresses\": [\"12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX\"]}, \"from\": 0, \"to\": 500")
+        );
+
+    std::vector<std::pair<uint160, int> > addresses;
+
+    if (!getAddressesFromParams(request.params, addresses)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+    }
+
+    int start = 0;
+    int end = 0;
+    if (request.params[0].isObject()) {
+        UniValue startValue = find_value(request.params[0].get_obj(), "start");
+        UniValue endValue = find_value(request.params[0].get_obj(), "end");
+        if (startValue.isNum() && endValue.isNum()) {
+            start = startValue.get_int();
+            end = endValue.get_int();
+        }
+    }
+
+    std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
+
+    for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
+        if (start > 0 && end > 0) {
+            if (!GetAddressIndex((*it).first, (*it).second, addressIndex, start, end)) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+            }
+        } else {
+            if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+            }
+        }
+    }
+
+    std::set<std::pair<int, std::string> > txids;
+    UniValue result(UniValue::VARR);
+
+    for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+        int height = it->first.blockHeight;
+        std::string txid = it->first.txhash.GetHex();
+
+        if (addresses.size() > 1) {
+            txids.insert(std::make_pair(height, txid));
+        } else {
+            if (txids.insert(std::make_pair(height, txid)).second) {
+                result.push_back(txid);
+            }
+        }
+    }
+
+    if (addresses.size() > 1) {
+        for (std::set<std::pair<int, std::string> >::const_iterator it=txids.begin(); it!=txids.end(); it++) {
+            result.push_back(it->second);
+        }
+    }
+
+    return result;
+
+}
+
 static UniValue getaddresstxids(const Config &config,
                                   const JSONRPCRequest &request) {
 
@@ -1999,6 +2083,7 @@ static const CRPCCommand commands[] = {
     { "blockchain",         "gettxoutproof",          gettxoutproof,          true,  {"txids", "blockhash"} },
     { "blockchain",         "verifytxoutproof",       verifytxoutproof,       true,  {"proof"} },
     { "address",            "getaddresstxids",        getaddresstxids,        true,  {"addresses", "start", "end"} },
+    { "address",            "getaddresstxidsoffsets", getaddresstxidsoffsets, true,  {"addresses", "from", "to" } },
     { "address",            "getaddressbalance",      getaddressbalance,      true,  {"addresses"} },
     { "address",            "getaddressutxos",        getaddressutxos,        true,  {"addresses", "chaininfo"} }
 };
