@@ -1995,7 +1995,7 @@ static UniValue getaddresstxidsoffsets(const Config &config,
 
     for (std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> >::const_iterator it=addressMempoolResults.begin(); it!=addressMempoolResults.end(); it++) {
         CAddressIndexKey s;
-        s.blockHeight = -1;
+        s.blockHeight = 99999999;
         s.hashBytes = it->first.addressBytes;
         s.txhash = it->first.txhash;
         s.type = it->first.type;
