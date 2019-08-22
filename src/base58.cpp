@@ -211,18 +211,22 @@ int CBase58Data::CompareTo(const CBase58Data &b58) const {
 
 bool CBase58Data::GetIndexKey(uint160& hashBytes, int& type) const
 {
+      std::cout << "GetIndexKey" << std::endl;
     if (!IsValid()) {
+        std::cout << "GetIndexKey: not valid" << std::endl;
         return false;
     } else if (vchVersion == Params().Base58Prefix(CChainParams::PUBKEY_ADDRESS)) {
         memcpy(&hashBytes, &vchData[0], 20);
         type = 1;
+        std::cout << "GetIndexKey: 1" << std::endl;
         return true;
     } else if (vchVersion == Params().Base58Prefix(CChainParams::SCRIPT_ADDRESS)) {
         memcpy(&hashBytes, &vchData[0], 20);
         type = 2;
+        std::cout << "GetIndexKey: 2" << std::endl;
         return true;
     }
-
+    std::cout << "GetIndexKey: end" << std::endl;
     return false;
 }
 
