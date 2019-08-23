@@ -1568,6 +1568,30 @@ static UniValue sendrawtransaction(const Config &config,
     return txid.GetHex();
 }
 
+std::string getBlockHash(int height) {
+    LOCK(cs_main);
+
+    if (height < 0 || height > chainActive.Height()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
+    }
+
+    CBlockIndex *pblockindex = chainActive[height];
+    return pblockindex->GetBlockHash().GetHex();
+}
+
+
+int getBlockHeight(std::string strHash) {
+    LOCK(cs_main);
+
+    uint256 hash(uint256S(strHash));
+    if (mapBlockIndex.count(hash) == 0) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+    }
+
+    CBlockIndex *pblockindex = mapBlockIndex[hash];
+    return pblockindex->nHeight;
+}
+
 bool getAddressFromIndex(const int &type, const uint160 &hash, std::string &address)
 {
     CTxDestination dest;
@@ -1610,12 +1634,12 @@ bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint16
             uint160 hashBytes;
             int type = 0;
             if (!address.GetIndexKey(hashBytes, type)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address da");
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address. Code: 1");
             }
             addresses.push_back(std::make_pair(hashBytes, type));
         }
     } else {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address e");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address. Code: 2");
     }
 
     return true;
@@ -1623,7 +1647,6 @@ bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint16
 
 bool getAddressesFromFirstArray(const UniValue& addressValues, std::vector<std::pair<uint160, int> > &addresses)
 {
-    std::cout << "getAddressesFromFirstArray" << std::endl;
     if (!addressValues.isArray()) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Addresses is expected to be an array");
     }
@@ -1636,11 +1659,10 @@ bool getAddressesFromFirstArray(const UniValue& addressValues, std::vector<std::
         uint160 hashBytes;
         int type = 0;
         if (!address.GetIndexKey(hashBytes, type)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address da");
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address. Code: 3");
         }
         addresses.push_back(std::make_pair(hashBytes, type));
     }
-    std::cout << "getAddressesFromFirstArray success" << std::endl;
     return true;
 }
 
@@ -1928,7 +1950,7 @@ static UniValue getaddressbalance(const Config &config,
 static UniValue getaddresstxidsoffsets(const Config &config,
                                   const JSONRPCRequest &request) {
 
-    if (request.fHelp || request.params.size() != 3)
+    if (request.fHelp || request.params.size() < 4)
         throw std::runtime_error(
             "getaddresstxidsoffsets\n"
             "\nReturns the txids for an address(es) with start and end offsets (requires addressindex to be enabled).\n"
@@ -1941,6 +1963,8 @@ static UniValue getaddresstxidsoffsets(const Config &config,
             "    ]\n"
             "  \"from\" (number) The start index\n"
             "  \"to\" (number) The end index\n"
+            "  \"afterHeight\": (number) Include tx's only after this height\n"
+            "  \"afterBlockHash\": (string) Include tx's only after this blockHash. Takes precedence over afterHeight\n"
             "}\n"
             "\nResult:\n"
             "[\n"
@@ -1981,10 +2005,36 @@ static UniValue getaddresstxidsoffsets(const Config &config,
     } else {
         to = request.params[2].get_int();
     }
+
+    std::string afterBlockHash;
+    int afterHeight = 0;
+    if (!request.params[3].isNum()) {
+            throw JSONRPCError(
+            RPC_TYPE_ERROR,
+            "Invalid type provided. AfterHeight parameter must be a int.");
+    } else {
+        afterHeight = request.params[3].get_int();
+
+        if (afterHeight > 0) {
+            afterBlockHash = getBlockHash(afterHeight);
+        }
+    }
+
+    if (request.params.size() == 5) {
+         if (!request.params[4].isStr()) {
+            throw JSONRPCError(
+            RPC_TYPE_ERROR,
+            "Invalid type provided. AfterBlockHash parameter must be a string.");
+        } else if (request.params[4].get_str().size()) {
+            afterBlockHash = request.params[4].get_str();
+            afterHeight = getBlockHeight(request.params[4].get_str());
+        }
+    }
+
     std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
 
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+        if (!GetAddressIndex((*it).first, (*it).second, addressIndex, afterHeight + 1, 9999999)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
     }
@@ -1992,16 +2042,16 @@ static UniValue getaddresstxidsoffsets(const Config &config,
     std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> >  addressMempoolResults;
     mempool.getAddressIndex(addresses, addressMempoolResults);
 
-
+    // Store the tx's in the mempool for the addresses
+    std::vector<std::pair<CAddressIndexKey, int64_t> > mempoolAddressIndex;
     for (std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> >::const_iterator it=addressMempoolResults.begin(); it!=addressMempoolResults.end(); it++) {
         CAddressIndexKey s;
-        s.blockHeight = 99999999;
+        s.blockHeight = 999999999;
         s.hashBytes = it->first.addressBytes;
         s.txhash = it->first.txhash;
         s.type = it->first.type;
         s.txindex = true;
-
-        addressIndex.push_back(std::make_pair(s, it->second.amount));
+        mempoolAddressIndex.push_back(std::make_pair(s, it->second.amount));
     }
 
     std::set<std::pair<int, std::string> > txids;
@@ -2014,19 +2064,38 @@ static UniValue getaddresstxidsoffsets(const Config &config,
             std::string txid = it->first.txhash.GetHex();
             txids.insert(std::make_pair(height, txid));
         }
+
+        // Add all the mempool tx's
+        for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=mempoolAddressIndex.begin(); it!=mempoolAddressIndex.end(); it++) {
+            int height = 999999999; // Set to very high because it is the mempool and we want them toshow up first
+            std::string txid = it->first.txhash.GetHex();
+            txids.insert(std::make_pair(height, txid));
+        }
+
         for (std::set<std::pair<int, std::string> >::const_reverse_iterator it=txids.rbegin(); it!=txids.rend(); it++) {
             if (counter >= from && counter <= to) {
                 UniValue txAndHeight(UniValue::VOBJ);
                 txAndHeight.push_back(Pair("txid", it->second));
-                txAndHeight.push_back(Pair("h", it->first));
+                if (it->first == 999999999) {
+                    txAndHeight.push_back(Pair("h", 0));
+                } else {
+                    txAndHeight.push_back(Pair("h", it->first));
+                }
                 txResults.push_back(txAndHeight);
             }
-            if (counter++ > to) {
+            if (counter > to) {
                 break;
             }
+            counter++;
         }
     } else {
         int counter = 0;
+
+        // Add all the mempool tx's
+        for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=mempoolAddressIndex.begin(); it!=mempoolAddressIndex.end(); it++) {
+            addressIndex.push_back(*it);
+        }
+
         for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_reverse_iterator it=addressIndex.rbegin(); it!=addressIndex.rend(); it++) {
             int height = it->first.blockHeight;
             std::string txid = it->first.txhash.GetHex();
@@ -2034,23 +2103,36 @@ static UniValue getaddresstxidsoffsets(const Config &config,
                 if (counter >= from && counter <= to) {
                     UniValue txAndHeight(UniValue::VOBJ);
                     txAndHeight.push_back(Pair("txid", txid));
-                    txAndHeight.push_back(Pair("h", height));
+                    if (height == 999999999) {
+                        txAndHeight.push_back(Pair("h", 0));
+                    } else {
+                        txAndHeight.push_back(Pair("h", height));
+                    }
                     txResults.push_back(txAndHeight);
                 }
-                if (counter++ > to) {
+                if (counter > to) {
                     break;
                 }
+                counter++;
             }
         }
     }
 
     UniValue result(UniValue::VOBJ);
     UniValue totalItems(UniValue::VNUM);
-    result.push_back(Pair("txs", txResults));
+
     result.push_back(Pair("from", from));
     result.push_back(Pair("to", to));
-    result.push_back(Pair("totalItems", (int) txids.size()));
 
+
+    if (afterBlockHash != "") {
+        result.push_back(Pair("afterBlockHash", afterBlockHash));
+        result.push_back(Pair("afterHeight", afterHeight));
+    } else {
+        result.push_back(Pair("afterHeight", afterHeight));
+    }
+    result.push_back(Pair("totalItems", (int) txids.size()));
+    result.push_back(Pair("txs", txResults));
     return result;
 }
 
