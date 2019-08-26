@@ -557,6 +557,11 @@ private:
     typedef std::map<uint256, std::vector<CMempoolAddressDeltaKey> > addressDeltaMapInserted;
     addressDeltaMapInserted mapAddressInserted;
 
+    typedef std::set<std::pair<uint256, unsigned int>, CMempoolAddressPotentialSpendsKeyCompare> txOutputPotentialSpendSet;
+
+    typedef std::map<uint160, txOutputPotentialSpendSet > addressPotentialSpendsMap;
+    addressPotentialSpendsMap mapAddressPotentialSpends;
+
     typedef std::map<CSpentIndexKey, CSpentIndexValue, CSpentIndexKeyCompare> mapSpentIndex;
     mapSpentIndex mapSpent;
 
@@ -601,7 +606,14 @@ public:
     void addAddressIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
     bool getAddressIndex(std::vector<std::pair<uint160, int> > &addresses,
                          std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > &results);
+
     bool removeAddressIndex(const uint256 txhash);
+
+    void addAddressPotentialSpendsIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
+    bool getAddressPotentialSpendsIndex(std::vector<std::pair<uint160, int> > &addresses,
+                         std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > &results);
+
+    bool removeAddressPotentialSpendsIndex(const uint256 txhash);
 
     void addSpentIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
     bool getSpentIndex(CSpentIndexKey &key, CSpentIndexValue &value);

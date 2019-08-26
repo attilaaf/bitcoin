@@ -1028,9 +1028,9 @@ static bool AcceptToMemoryPoolWorker(
         pool.addUnchecked(txid, entry, setAncestors, validForFeeEstimation);
 
         // Add memory address index
-
         if (fAddressIndex) {
             pool.addAddressIndex(entry, view);
+            pool.addAddressPotentialSpendsIndex(entry, view);
         }
 
         // Add memory spent index

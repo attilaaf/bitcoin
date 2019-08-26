@@ -79,4 +79,15 @@ struct CMempoolAddressDeltaKeyCompare
     }
 };
 
+struct CMempoolAddressPotentialSpendsKeyCompare
+{
+    bool operator()(const std::pair<uint256, int>& a, const std::pair<uint256, int>& b) const {
+        if (a.first == b.first) {
+            return a.second < b.second;
+        } else {
+            return a.first < b.first;
+        }
+    }
+};
+
 #endif // BITCOIN_ADDRESSINDEX_H

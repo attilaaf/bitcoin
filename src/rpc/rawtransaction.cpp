@@ -1709,17 +1709,41 @@ static UniValue getaddressutxos(const Config &config,
             + HelpExampleRpc("getaddressutxos", "{\"addresses\": [\"12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX\"]}")
             );
 
-    bool includeChainInfo = false;
-    if (request.params[0].isObject()) {
+    if (!request.params[0].isArray()) {
+        throw JSONRPCError(
+        RPC_TYPE_ERROR,
+        "Invalid type provided. addresses parameter must be an array.");
+    }
+
+    int from = 0;
+    if (!request.params[1].isNum()) {
+            throw JSONRPCError(
+            RPC_TYPE_ERROR,
+            "Invalid type provided. From parameter must be a int.");
+    } else {
+        from = request.params[1].get_int();
+    }
+
+    int to = 50;
+    if (!request.params[2].isNum()) {
+            throw JSONRPCError(
+            RPC_TYPE_ERROR,
+            "Invalid type provided. To parameter must be a int.");
+    } else {
+        to = request.params[2].get_int();
+    }
+
+    bool includeChainInfo = true;
+    /*if (request.params[0].isObject()) {
         UniValue chainInfo = find_value(request.params[0].get_obj(), "chainInfo");
         if (chainInfo.isBool()) {
             includeChainInfo = chainInfo.get_bool();
         }
-    }
+    }*/
 
     std::vector<std::pair<uint160, int> > addresses;
 
-    if (!getAddressesFromParams(request.params, addresses)) {
+    if (!getAddressesFromFirstArray(request.params[0], addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
@@ -1982,7 +2006,7 @@ static UniValue getaddresstxidsoffsets(const Config &config,
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
-     if (!request.params[0].isArray()) {
+    if (!request.params[0].isArray()) {
         throw JSONRPCError(
         RPC_TYPE_ERROR,
         "Invalid type provided. addresses parameter must be an array.");
@@ -2051,6 +2075,7 @@ static UniValue getaddresstxidsoffsets(const Config &config,
         s.txhash = it->first.txhash;
         s.type = it->first.type;
         s.txindex = true;
+        s.spending = it->first.spending;
         mempoolAddressIndex.push_back(std::make_pair(s, it->second.amount));
     }
 
