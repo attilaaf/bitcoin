@@ -9,18 +9,36 @@
 #include "uint256.h"
 #include "amount.h"
 
+struct CMempoolAddressPotentialSpendsDelta
+{
+    uint256 txhash;
+    unsigned int outputIndex;
+
+    CMempoolAddressPotentialSpendsDelta(uint256 hash, unsigned int out) {
+        txhash = hash;
+        outputIndex = out;
+    }
+
+    CMempoolAddressPotentialSpendsDelta() {
+        txhash.SetNull();
+        outputIndex = 0;
+    }
+};
+
 struct CMempoolAddressDelta
 {
     int64_t time;
     int64_t amount;
     uint256 prevhash;
     unsigned int prevout;
+    CScript scriptPubKey;
 
     CMempoolAddressDelta(int64_t t, int64_t a, uint256 hash, unsigned int out) {
         time = t;
         amount = a;
         prevhash = hash;
         prevout = out;
+        scriptPubKey = 0;
     }
 
     CMempoolAddressDelta(int64_t t, int64_t a) {
@@ -28,6 +46,15 @@ struct CMempoolAddressDelta
         amount = a;
         prevhash.SetNull();
         prevout = 0;
+        scriptPubKey = 0;
+    }
+
+    CMempoolAddressDelta(int64_t t, int64_t a, CScript scriptPubKey) {
+        time = t;
+        amount = a;
+        prevhash.SetNull();
+        prevout = 0;
+        scriptPubKey = scriptPubKey;
     }
 };
 

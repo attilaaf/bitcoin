@@ -1749,6 +1749,12 @@ static UniValue getaddressutxos(const Config &config,
 
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
 
+    // Add any mempool utxos first
+    if (!mempool.getAddressUnspent(addresses, unspentOutputs)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+    }
+
+    // Then add the confirmed utxos
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
         if (!GetAddressUnspent((*it).first, (*it).second, unspentOutputs)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
@@ -1771,19 +1777,25 @@ static UniValue getaddressutxos(const Config &config,
         output.push_back(Pair("outputIndex", (int)it->first.index));
         output.push_back(Pair("script", HexStr(it->second.script.begin(), it->second.script.end())));
         output.push_back(Pair("satoshis", it->second.satoshis));
-        output.push_back(Pair("height", it->second.blockHeight));
+
+        if (it->second.blockHeight == 999999999) {
+            output.push_back(Pair("height", 0));
+        } else {
+            output.push_back(Pair("height", it->second.blockHeight));
+        }
         utxos.push_back(output);
     }
-
+    UniValue result(UniValue::VOBJ);
     if (includeChainInfo) {
-        UniValue result(UniValue::VOBJ);
+        result.push_back(Pair("totalItems", (int) utxos.size()));
         result.push_back(Pair("utxos", utxos));
-
         LOCK(cs_main);
         result.push_back(Pair("hash", chainActive.Tip()->GetBlockHash().GetHex()));
         result.push_back(Pair("height", (int)chainActive.Height()));
         return result;
     } else {
+        result.push_back(Pair("totalItems", (int) utxos.size()));
+        result.push_back(Pair("utxos", utxos));
         return utxos;
     }
 }
@@ -2058,7 +2070,7 @@ static UniValue getaddresstxidsoffsets(const Config &config,
     std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
 
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        if (!GetAddressIndex((*it).first, (*it).second, addressIndex, afterHeight + 1, 9999999)) {
+        if (!GetAddressIndex((*it).first, (*it).second, addressIndex, afterHeight + 1, 999999999)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
     }

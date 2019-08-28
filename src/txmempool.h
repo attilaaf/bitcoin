@@ -32,6 +32,8 @@
 class CAutoFile;
 class CBlockIndex;
 class Config;
+struct CAddressUnspentKey;
+struct CAddressUnspentValue;
 
 inline double AllowFreeThreshold() {
     return COIN.GetSatoshis() * 144 / 250;
@@ -557,10 +559,12 @@ private:
     typedef std::map<uint256, std::vector<CMempoolAddressDeltaKey> > addressDeltaMapInserted;
     addressDeltaMapInserted mapAddressInserted;
 
-    typedef std::set<std::pair<uint256, unsigned int>, CMempoolAddressPotentialSpendsKeyCompare> txOutputPotentialSpendSet;
+    // Map the address key to the potential spends data
+    // We use this datastructure because then we can quickly enumerate all the utxo's for an address, and also be able to easily delete by txhash on removal
+    typedef std::map<CMempoolAddressDeltaKey, CMempoolAddressPotentialSpendsDelta, CMempoolAddressDeltaKeyCompare> addressPotentialSpendDeltaMap;
 
-    typedef std::map<uint160, txOutputPotentialSpendSet > addressPotentialSpendsMap;
-    addressPotentialSpendsMap mapAddressPotentialSpends;
+    addressPotentialSpendDeltaMap mapAddressPotentialSpends;
+    addressDeltaMapInserted mapAddressPotentialSpendsInserted;
 
     typedef std::map<CSpentIndexKey, CSpentIndexValue, CSpentIndexKeyCompare> mapSpentIndex;
     mapSpentIndex mapSpent;
@@ -611,9 +615,12 @@ public:
 
     void addAddressPotentialSpendsIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
     bool getAddressPotentialSpendsIndex(std::vector<std::pair<uint160, int> > &addresses,
-                         std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > &results);
+                         std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressPotentialSpendsDelta> > &results);
 
     bool removeAddressPotentialSpendsIndex(const uint256 txhash);
+
+    bool getAddressUnspent(std::vector<std::pair<uint160, int> > &addresses,
+                         std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
 
     void addSpentIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
     bool getSpentIndex(CSpentIndexKey &key, CSpentIndexValue &value);
