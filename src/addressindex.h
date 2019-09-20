@@ -8,6 +8,7 @@
 
 #include "uint256.h"
 #include "amount.h"
+#include "utilstrencodings.h"
 
 struct CMempoolAddressPotentialSpendsDelta
 {
@@ -33,12 +34,12 @@ struct CMempoolAddressDelta
     unsigned int prevout;
     CScript scriptPubKey;
 
-    CMempoolAddressDelta(int64_t t, int64_t a, uint256 hash, unsigned int out) {
+    CMempoolAddressDelta(int64_t t, int64_t a, uint256 hash, unsigned int out, CScript scriptPubKeyValue) {
         time = t;
         amount = a;
         prevhash = hash;
         prevout = out;
-        scriptPubKey = 0;
+        scriptPubKey = scriptPubKeyValue;
     }
 
     CMempoolAddressDelta(int64_t t, int64_t a) {
@@ -49,12 +50,12 @@ struct CMempoolAddressDelta
         scriptPubKey = 0;
     }
 
-    CMempoolAddressDelta(int64_t t, int64_t a, CScript scriptPubKey) {
+    CMempoolAddressDelta(int64_t t, int64_t a, CScript scriptPubKeyValue) {
         time = t;
         amount = a;
         prevhash.SetNull();
         prevout = 0;
-        scriptPubKey = scriptPubKey;
+        scriptPubKey = scriptPubKeyValue;
     }
 };
 

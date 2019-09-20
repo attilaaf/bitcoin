@@ -18,6 +18,7 @@
 #include "utiltime.h"
 #include "validation.h"
 #include "version.h"
+#include "utilstrencodings.h"
 
 #include <boost/range/adaptor/reversed.hpp>
 
@@ -483,13 +484,13 @@ void CTxMemPool::addAddressIndex(const CTxMemPoolEntry &entry, const CCoinsViewC
         if (prevout.scriptPubKey.IsPayToScriptHash()) {
             std::vector<unsigned char> hashBytes(prevout.scriptPubKey.begin()+2, prevout.scriptPubKey.begin()+22);
             CMempoolAddressDeltaKey key(2, uint160(hashBytes), txhash, j, 1);
-            CMempoolAddressDelta delta(entry.GetTime(), prevout.nValue.GetSatoshis() * -1, input.prevout.GetTxId(), input.prevout.GetN());
+            CMempoolAddressDelta delta(entry.GetTime(), prevout.nValue.GetSatoshis() * -1, input.prevout.GetTxId(), input.prevout.GetN(), prevout.scriptPubKey);
             mapAddress.insert(std::make_pair(key, delta));
             inserted.push_back(key);
         } else if (prevout.scriptPubKey.IsPayToPublicKeyHash()) {
             std::vector<unsigned char> hashBytes(prevout.scriptPubKey.begin()+3, prevout.scriptPubKey.begin()+23);
             CMempoolAddressDeltaKey key(1, uint160(hashBytes), txhash, j, 1);
-            CMempoolAddressDelta delta(entry.GetTime(), prevout.nValue.GetSatoshis() * -1, input.prevout.GetTxId(), input.prevout.GetN());
+            CMempoolAddressDelta delta(entry.GetTime(), prevout.nValue.GetSatoshis() * -1, input.prevout.GetTxId(), input.prevout.GetN(), prevout.scriptPubKey);
             mapAddress.insert(std::make_pair(key, delta));
             inserted.push_back(key);
         }
@@ -500,18 +501,37 @@ void CTxMemPool::addAddressIndex(const CTxMemPoolEntry &entry, const CCoinsViewC
         if (out.scriptPubKey.IsPayToScriptHash()) {
             std::vector<unsigned char> hashBytes(out.scriptPubKey.begin()+2, out.scriptPubKey.begin()+22);
             CMempoolAddressDeltaKey key(2, uint160(hashBytes), txhash, k, 0);
-            mapAddress.insert(std::make_pair(key, CMempoolAddressDelta(entry.GetTime(), out.nValue.GetSatoshis(), out.scriptPubKey)));
+            CMempoolAddressDelta delta = CMempoolAddressDelta(entry.GetTime(), out.nValue.GetSatoshis(), out.scriptPubKey);
+            mapAddress.insert(std::make_pair(key, delta));
             inserted.push_back(key);
         } else if (out.scriptPubKey.IsPayToPublicKeyHash()) {
             std::vector<unsigned char> hashBytes(out.scriptPubKey.begin()+3, out.scriptPubKey.begin()+23);
             std::pair<addressDeltaMap::iterator,bool> ret;
             CMempoolAddressDeltaKey key(1, uint160(hashBytes), txhash, k, 0);
-            mapAddress.insert(std::make_pair(key, CMempoolAddressDelta(entry.GetTime(), out.nValue.GetSatoshis(), out.scriptPubKey)));
+            CMempoolAddressDelta delta = CMempoolAddressDelta(entry.GetTime(), out.nValue.GetSatoshis(), out.scriptPubKey);
+            mapAddress.insert(std::make_pair(key, delta));
             inserted.push_back(key);
         }
     }
 
     mapAddressInserted.insert(make_pair(txhash, inserted));
+}
+
+bool CTxMemPool::getAddressUnspent(std::vector<std::pair<uint160, int> > &addresses,
+                        std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs) {
+
+    LOCK(cs);
+    for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
+        addressDeltaMap::iterator ait = mapAddress.lower_bound(CMempoolAddressDeltaKey((*it).second, (*it).first));
+        while (ait != mapAddress.end() && (*ait).first.addressBytes == (*it).first && (*ait).first.type == (*it).second) {
+            CAddressUnspentKey addressUnspentKey((*it).second, (*it).first, (*ait).first.txhash, (*ait).first.index);
+            CAddressUnspentValue addressUnspentValue((*ait).second.amount, (*ait).second.scriptPubKey, 999999999);
+            unspentOutputs.push_back(std::make_pair(addressUnspentKey, addressUnspentValue));
+            ait++;
+        }
+    }
+
+   return true;
 }
 
 bool CTxMemPool::getAddressIndex(std::vector<std::pair<uint160, int> > &addresses,
@@ -603,24 +623,6 @@ bool CTxMemPool::removeAddressPotentialSpendsIndex(const uint256 txhash)
     }
 
     return true;
-}
-
-bool CTxMemPool::getAddressUnspent(std::vector<std::pair<uint160, int> > &addresses,
-                        std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs) {
-
-    LOCK(cs);
-    // const CTxOut &prevout = view.GetOutputFor(tx.vin[j]);
-    for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        addressDeltaMap::iterator ait = mapAddress.lower_bound(CMempoolAddressDeltaKey((*it).second, (*it).first));
-        while (ait != mapAddress.end() && (*ait).first.addressBytes == (*it).first && (*ait).first.type == (*it).second && (*ait).second.prevhash.IsNull()) {
-            CAddressUnspentKey addressUnspentKey((*it).second, (*it).first, (*ait).first.txhash, (*ait).first.index);
-            CAddressUnspentValue addressUnspentValue((*ait).second.amount, (*ait).second.scriptPubKey, 9999999);
-            unspentOutputs.push_back(std::make_pair(addressUnspentKey, addressUnspentValue));
-            ait++;
-        }
-    }
-
-   return true;
 }
 
 void CTxMemPool::addSpentIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view)
