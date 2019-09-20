@@ -1753,7 +1753,7 @@ static UniValue getaddressutxos(const Config &config,
     if (!mempool.getAddressUnspent(addresses, unspentOutputs)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
     }
-    std::cout << "Mempool utxos count: " << unspentOutputs.size() << std::endl;
+    // std::cout << "Mempool utxos count: " << unspentOutputs.size() << std::endl;
 
     // Then add the confirmed utxos
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
@@ -1761,26 +1761,26 @@ static UniValue getaddressutxos(const Config &config,
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
     }
-    std::cout << "Mempool_+block utxos count: " << unspentOutputs.size() << std::endl;
+    // std::cout << "Mempool_+block utxos count: " << unspentOutputs.size() << std::endl;
 
     std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressPotentialSpendsDelta> > potentialSpendsOfAddresses;
     mempool.getAddressPotentialSpendsIndex(addresses, potentialSpendsOfAddresses);
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > remainingUnspentOutputs;
 
     for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
-        std::cout << "UTXO to process: " << it->first.txhash.GetHex() << " output: " << it->first.index << std::endl;
+        // std::cout << "UTXO to process: " << it->first.txhash.GetHex() << " output: " << it->first.index << std::endl;
         bool isSpent = false;
         for (std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressPotentialSpendsDelta> >::iterator pSpendsIt = potentialSpendsOfAddresses.begin(); pSpendsIt != potentialSpendsOfAddresses.end(); pSpendsIt++) {
             if (pSpendsIt->second.txhash == it->first.txhash && pSpendsIt->second.outputIndex == it->first.index) {
                 // Skip because it's been spent already
                 isSpent = true;
-                std::cout << "Skipping because the Unspent is in potential spends., " << it->first.txhash.GetHex() << " output: " << it->first.index << std::endl;
+                // std::cout << "Skipping because the Unspent is in potential spends., " << it->first.txhash.GetHex() << " output: " << it->first.index << std::endl;
             }
         }
         // the address index includes negative satoshis for the inputs in the mempool. Therefore filter them out
         if (!isSpent && it->second.satoshis > 0) {
             remainingUnspentOutputs.push_back(std::make_pair(it->first, it->second));
-            std::cout << "Adding in utxo" << it->first.txhash.GetHex() << " output: " << it->first.index << std::endl;
+            // std::cout << "Adding in utxo" << it->first.txhash.GetHex() << " output: " << it->first.index << std::endl;
         }
     }
 

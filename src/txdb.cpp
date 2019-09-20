@@ -287,6 +287,7 @@ bool CBlockTreeDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddres
     CDBBatch batch(*this);
     for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
         if (it->second.IsNull()) {
+            // std::cout << "isnull-------" << it->first.hashBytes.GetHex() << " tx: " << it->first.txhash.GetHex() << " output: " << it->first.index << std::endl;
             batch.Erase(std::make_pair(DB_ADDRESSUNSPENTINDEX, it->first));
         } else {
             batch.Write(std::make_pair(DB_ADDRESSUNSPENTINDEX, it->first), it->second);
