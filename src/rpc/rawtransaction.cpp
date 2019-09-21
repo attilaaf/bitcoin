@@ -1949,6 +1949,105 @@ static UniValue getaddressdeltas(const Config &config,
 }
 
 
+static UniValue getaddressinfo(const Config &config,
+                                  const JSONRPCRequest &request) {
+
+    if (request.fHelp || request.params.size() != 1)
+        throw std::runtime_error(
+            "getaddressinfo\n"
+            "\nReturns info for an address(es) (requires addressindex to be enabled).\n"
+            "\nArguments:\n"
+            "{\n"
+            "  \"addresses\"\n"
+            "    [\n"
+            "      \"address\"  (string) The base58check encoded address\n"
+            "      ,...\n"
+            "    ]\n"
+            "}\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"...\"  (string) The current infos\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getaddressinfo", "'{\"addresses\": [\"12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX\"]}'")
+            + HelpExampleRpc("getaddressinfo", "{\"addresses\": [\"12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX\"]}")
+        );
+
+    std::vector<std::pair<uint160, int> > addresses;
+
+    if (!getAddressesFromFirstArray(request.params[0], addresses)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+    }
+
+    std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
+
+    for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
+        if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+        }
+    }
+
+    std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
+
+    // Add any mempool utxos first
+    if (!mempool.getAddressUnspent(addresses, unspentOutputs)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+    }
+    UniValue txList(UniValue::VARR);
+
+    int unconfirmedBalance = 0;
+
+    std::set<uint256> unconfirmedTxSet;
+    for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
+        unconfirmedBalance += it->second.satoshis;
+        unconfirmedTxSet.insert(it->first.txhash);
+        txList.push_back(it->first.txhash.GetHex());
+    }
+
+    int64_t balance = 0;
+    int64_t received = 0;
+    int64_t sent = 0;
+
+    std::set<uint256> confirmedTxSet;
+
+    for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+        if (it->second > 0) {
+            received += it->second;
+        }
+        if (it->second < 0) {
+            sent += it->second * -1;
+        }
+        balance += it->second;
+        confirmedTxSet.insert(it->first.txhash);
+        txList.push_back(it->first.txhash.GetHex());
+    }
+
+    UniValue result(UniValue::VOBJ);
+    result.push_back(Pair("addrStr", request.params[0][0]));
+
+    Amount bal(balance);
+    result.push_back(Pair("balance", ValueFromAmount(bal)));
+    result.push_back(Pair("balanceSat", bal.GetSatoshis()));
+
+    Amount totalReceived(received);
+    result.push_back(Pair("totalReceived", ValueFromAmount(totalReceived)));
+    result.push_back(Pair("totalReceivedSat", totalReceived.GetSatoshis()));
+
+    Amount totalSent(sent);
+    result.push_back(Pair("totalSent", ValueFromAmount(totalSent)));
+    result.push_back(Pair("totalSentSat", totalSent.GetSatoshis()));
+
+    Amount unconfirmedBal(unconfirmedBalance);
+    result.push_back(Pair("unconfirmedBalance", ValueFromAmount(unconfirmedBal)));
+    result.push_back(Pair("unconfirmedBalanceSat", unconfirmedBal.GetSatoshis()));
+    result.push_back(Pair("unconfirmedTxApperances", (int) unconfirmedTxSet.size()));
+    result.push_back(Pair("txApperances", (int) confirmedTxSet.size()));
+    result.push_back(Pair("transactions", txList));
+
+    return result;
+
+}
+
 static UniValue getaddressbalance(const Config &config,
                                   const JSONRPCRequest &request) {
 
@@ -1976,7 +2075,7 @@ static UniValue getaddressbalance(const Config &config,
 
     std::vector<std::pair<uint160, int> > addresses;
 
-    if (!getAddressesFromParams(request.params, addresses)) {
+    if (!getAddressesFromFirstArray(request.params[0], addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
@@ -1986,6 +2085,18 @@ static UniValue getaddressbalance(const Config &config,
         if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
+    }
+
+    std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
+
+    // Add any mempool utxos first
+    if (!mempool.getAddressUnspent(addresses, unspentOutputs)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+    }
+
+    int unconfirmedBalance = 0;
+    for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
+        unconfirmedBalance += it->second.satoshis;
     }
 
     int64_t balance = 0;
@@ -2000,6 +2111,8 @@ static UniValue getaddressbalance(const Config &config,
 
     UniValue result(UniValue::VOBJ);
     result.push_back(Pair("balance", balance));
+    result.push_back(Pair("confirmed", balance));
+    result.push_back(Pair("unconfirmed", unconfirmedBalance));
     result.push_back(Pair("received", received));
 
     return result;
@@ -2296,6 +2409,7 @@ static const CRPCCommand commands[] = {
     { "address",            "getaddresstxids",        getaddresstxids,        true,  {"addresses", "start", "end"} },
     { "address",            "getaddresstxidsoffsets", getaddresstxidsoffsets, true,  {"addresses", "from", "to" } },
     { "address",            "getaddressbalance",      getaddressbalance,      true,  {"addresses"} },
+    { "address",            "getaddressinfo",         getaddressinfo,         true,  {"addresses"} },
     { "address",            "getaddressutxos",        getaddressutxos,        true,  {"addresses", "chaininfo"} }
 };
 // clang-format on
