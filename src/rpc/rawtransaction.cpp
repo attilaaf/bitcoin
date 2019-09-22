@@ -2000,8 +2000,10 @@ static UniValue getaddressinfo(const Config &config,
     std::set<uint256> unconfirmedTxSet;
     for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
         unconfirmedBalance += it->second.satoshis;
-        unconfirmedTxSet.insert(it->first.txhash);
-        txList.push_back(it->first.txhash.GetHex());
+        if (unconfirmedTxSet.find(it->first.txhash) == unconfirmedTxSet.end()) {
+            unconfirmedTxSet.insert(it->first.txhash);
+            txList.push_back(it->first.txhash.GetHex());
+        }
     }
 
     int64_t balance = 0;
@@ -2018,8 +2020,11 @@ static UniValue getaddressinfo(const Config &config,
             sent += it->second * -1;
         }
         balance += it->second;
-        confirmedTxSet.insert(it->first.txhash);
-        txList.push_back(it->first.txhash.GetHex());
+
+        if (confirmedTxSet.find(it->first.txhash) == confirmedTxSet.end()) {
+            confirmedTxSet.insert(it->first.txhash);
+            txList.push_back(it->first.txhash.GetHex());
+        }
     }
 
     UniValue result(UniValue::VOBJ);
