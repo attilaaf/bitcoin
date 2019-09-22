@@ -15,10 +15,11 @@
 #include "uint256.h"
 #include "util.h"
 #include "validation.h"
-
+#include <string>
 #include <boost/thread.hpp>
 
 #include <cstdint>
+#include <pqxx/pqxx>
 
 static const char DB_COIN = 'C';
 static const char DB_COINS = 'c';
@@ -293,6 +294,49 @@ bool CBlockTreeDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddres
             batch.Write(std::make_pair(DB_ADDRESSUNSPENTINDEX, it->first), it->second);
         }
     }
+
+    try
+    {
+        pqxx::connection C("postgresql://postgres:yourpassword@localhost/sauron");
+        pqxx::work W(C);
+
+        for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+            if (it->second.IsNull()) {
+
+                if ("6d04d529998fbe3fe2235007f6586a32ac3ba81aeb9823729d9ccb166d3f178a" == it->first.txhash.GetHex()) {
+                    std::cout << "matched DELETE " << std::endl;
+                }
+                W.exec("DELETE FROM unspent WHERE hashbytes ='" +it->first.hashBytes.GetHex() + "' AND " +
+                    " txid='" + it->first.txhash.GetHex() + "' AND " +
+                    " index='" + std::to_string(it->first.index) + "' AND " +
+                    " address_type='" + std::to_string(it->first.type) + "'"
+                );
+            } else {
+                if ("6d04d529998fbe3fe2235007f6586a32ac3ba81aeb9823729d9ccb166d3f178a" == it->first.txhash.GetHex()) {
+                    std::cout << "matched INSERT " << std::endl;
+                }
+                std::string q = "INSERT INTO unspent(hashbytes, txid, index, address_type, sats, script, height)  VALUES('" +
+                    it->first.hashBytes.GetHex() + "'," +
+                    "'" + it->first.txhash.GetHex() + "'," +
+                    "'" + std::to_string(it->first.index) + "'," +
+                    "'" + std::to_string(it->first.type) + "',"
+                    "'" + std::to_string(it->second.satoshis) + "'," +
+                    "'" + HexStr(it->second.script.begin(), it->second.script.end()) + "'," +
+                    "'" + std::to_string(it->second.blockHeight) + "') ON CONFLICT (hashbytes, txid, index) DO NOTHING";
+
+                W.exec(q);
+            }
+        }
+
+        W.commit();
+        std::cout << "." << std::endl;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << std::endl;
+        throw e;
+    }
+
     return WriteBatch(batch);
 }
 

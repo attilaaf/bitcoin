@@ -2012,7 +2012,7 @@ static UniValue getaddressinfo(const Config &config,
 
     std::set<uint256> confirmedTxSet;
 
-    for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+    for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_reverse_iterator it=addressIndex.rbegin(); it!=addressIndex.rend(); it++) {
         if (it->second > 0) {
             received += it->second;
         }
