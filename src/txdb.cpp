@@ -17,7 +17,7 @@
 #include "validation.h"
 #include <string>
 #include <boost/thread.hpp>
-
+#include <chrono>
 #include <cstdint>
 #include <pqxx/pqxx>
 
@@ -294,48 +294,81 @@ bool CBlockTreeDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddres
             batch.Write(std::make_pair(DB_ADDRESSUNSPENTINDEX, it->first), it->second);
         }
     }
-
+    /*
     try
     {
-        pqxx::connection C("postgresql://postgres:yourpassword@localhost/sauron");
-        pqxx::work W(C);
+        auto begin1 = std::chrono::high_resolution_clock::now();
 
+
+        auto begin2 = std::chrono::high_resolution_clock::now();
+        int c = 0;
+
+        std::string queries;
         for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
             if (it->second.IsNull()) {
-
-                if ("6d04d529998fbe3fe2235007f6586a32ac3ba81aeb9823729d9ccb166d3f178a" == it->first.txhash.GetHex()) {
-                    std::cout << "matched DELETE " << std::endl;
-                }
-                W.exec("DELETE FROM unspent WHERE hashbytes ='" +it->first.hashBytes.GetHex() + "' AND " +
-                    " txid='" + it->first.txhash.GetHex() + "' AND " +
-                    " index='" + std::to_string(it->first.index) + "' AND " +
-                    " address_type='" + std::to_string(it->first.type) + "'"
-                );
+                queries += "DELETE FROM unspent WHERE hashbytes ='";
+                queries += it->first.hashBytes.GetHex();
+                queries += "' AND ";
+                queries += " txid='";
+                queries += it->first.txhash.GetHex();
+                queries += "' AND ";
+                queries += " index='";
+                queries += std::to_string(it->first.index);
+                queries += "' AND ";
+                queries += " address_type='";
+                queries += std::to_string(it->first.type);
+                queries += "'; ";
+                c++;
+                // std::cout << q1 << std::endl;
             } else {
-                if ("6d04d529998fbe3fe2235007f6586a32ac3ba81aeb9823729d9ccb166d3f178a" == it->first.txhash.GetHex()) {
-                    std::cout << "matched INSERT " << std::endl;
-                }
-                std::string q = "INSERT INTO unspent(hashbytes, txid, index, address_type, sats, script, height)  VALUES('" +
-                    it->first.hashBytes.GetHex() + "'," +
-                    "'" + it->first.txhash.GetHex() + "'," +
-                    "'" + std::to_string(it->first.index) + "'," +
-                    "'" + std::to_string(it->first.type) + "',"
-                    "'" + std::to_string(it->second.satoshis) + "'," +
-                    "'" + HexStr(it->second.script.begin(), it->second.script.end()) + "'," +
-                    "'" + std::to_string(it->second.blockHeight) + "') ON CONFLICT (hashbytes, txid, index) DO NOTHING";
+                queries += "INSERT INTO unspent(hashbytes, txid, index, address_type, sats, script, height)  VALUES('";
+                queries += it->first.hashBytes.GetHex();
+                queries += "',";
+                queries += "'";
+                queries += it->first.txhash.GetHex();
+                queries += "',";
+                queries += "'";
+                queries += std::to_string(it->first.index);
+                queries += "',";
+                queries += "'";
+                queries += std::to_string(it->first.type);
+                queries += "',";
+                queries += "'";
+                queries += std::to_string(it->second.satoshis);
+                queries += "',";
+                queries += "'";
+                queries += HexStr(it->second.script.begin(), it->second.script.end());
+                queries += "',";
+                queries += "'";
+                queries += std::to_string(it->second.blockHeight) + "') ON CONFLICT (hashbytes, txid, index, address_type) DO NOTHING; ";
 
-                W.exec(q);
+                c++;
             }
         }
 
-        W.commit();
-        std::cout << "." << std::endl;
+        if (c > 0) {
+            pqxx::connection C("postgresql://postgres:password@addressindexdb.c8wlkihnverc.us-west-2.rds.amazonaws.com/addressindex_prod");
+            // pqxx::connection C("postgresql://postgres:yourpassword@localhost/sauron");
+            pqxx::work W(C);
+
+            W.exec(queries);
+            auto end2 = std::chrono::high_resolution_clock::now();
+            auto dur2 = end2 - begin2;
+            auto ms2 = std::chrono::duration_cast<std::chrono::milliseconds>(dur2).count();
+
+            W.commit();
+
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto dur1 = end1 - begin1;
+            auto ms1 = std::chrono::duration_cast<std::chrono::milliseconds>(dur1).count();
+            std::cout << "Total time saving index: " << ms1 << " Total time preparing: " << ms2 << " records: " << c <<  std::endl;
+        }
     }
     catch (const std::exception &e)
     {
         std::cerr << e.what() << std::endl;
-        throw e;
-    }
+        return false;
+    }*/
 
     return WriteBatch(batch);
 }
@@ -370,6 +403,74 @@ bool CBlockTreeDB::WriteAddressIndex(const std::vector<std::pair<CAddressIndexKe
     CDBBatch batch(*this);
     for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=vect.begin(); it!=vect.end(); it++)
         batch.Write(std::make_pair(DB_ADDRESSINDEX, it->first), it->second);
+    /*
+    try
+    {
+        auto begin1 = std::chrono::high_resolution_clock::now();
+        auto begin2 = std::chrono::high_resolution_clock::now();
+        int c = 0;
+        std::string queries;
+        for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+
+            queries += "INSERT INTO addrtx(hashbytes, txid, index, txindex, address_type, sats, spending, height)  VALUES('";
+            queries += it->first.hashBytes.GetHex();
+            queries += "',";
+
+            queries += "'";
+            queries += it->first.txhash.GetHex();
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.index);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.txindex);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.type);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->second);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.spending);
+            queries += "',";
+
+            queries += "'";
+            queries += std::to_string(it->first.blockHeight);
+            queries += "') ON CONFLICT (hashbytes, txid, index, spending) DO NOTHING; ";
+            c++;
+        }
+
+        if (c > 0) {
+            pqxx::connection C("postgresql://postgres:password@addressindexdb.c8wlkihnverc.us-west-2.rds.amazonaws.com/addressindex_prod");
+            // pqxx::connection C("postgresql://postgres:yourpassword@localhost/sauron");
+            pqxx::work W(C);
+
+            W.exec(queries);
+            auto end2 = std::chrono::high_resolution_clock::now();
+            auto dur2 = end2 - begin2;
+            auto ms2 = std::chrono::duration_cast<std::chrono::milliseconds>(dur2).count();
+
+            W.commit();
+
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto dur1 = end1 - begin1;
+            auto ms1 = std::chrono::duration_cast<std::chrono::milliseconds>(dur1).count();
+            std::cout << "Total time saving TX index: " << ms1 << " Total time preparing: " << ms2 << " records: " << c <<  std::endl;
+        }
+
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << std::endl;
+        return false;
+    }*/
+
     return WriteBatch(batch);
 }
 
@@ -377,6 +478,56 @@ bool CBlockTreeDB::EraseAddressIndex(const std::vector<std::pair<CAddressIndexKe
     CDBBatch batch(*this);
     for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=vect.begin(); it!=vect.end(); it++)
         batch.Erase(std::make_pair(DB_ADDRESSINDEX, it->first));
+    /*
+    try
+    {
+        auto begin1 = std::chrono::high_resolution_clock::now();
+        auto begin2 = std::chrono::high_resolution_clock::now();
+        int c = 0;
+        std::string queries;
+        for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
+
+            queries += "DELETE FROM addrtx WHERE hashbytes ='";
+            queries += it->first.hashBytes.GetHex();
+            queries += "' AND ";
+            queries += " txid='";
+            queries += it->first.txhash.GetHex();
+            queries += "' AND ";
+            queries += " index='";
+            queries += std::to_string(it->first.index);
+            queries += "' AND ";
+            queries += " spending='";
+            queries += std::to_string(it->first.spending);
+            queries += "'; ";
+            // queries += std::to_string(it->second.blockHeight) + "') ON CONFLICT (hashbytes, txid, index) DO NOTHING; ";
+            c++;
+        }
+
+        if (c > 0) {
+            pqxx::connection C("postgresql://postgres:password@addressindexdb.c8wlkihnverc.us-west-2.rds.amazonaws.com/addressindex_prod");
+            // pqxx::connection C("postgresql://postgres:yourpassword@localhost/sauron");
+            pqxx::work W(C);
+
+            W.exec(queries);
+            auto end2 = std::chrono::high_resolution_clock::now();
+            auto dur2 = end2 - begin2;
+            auto ms2 = std::chrono::duration_cast<std::chrono::milliseconds>(dur2).count();
+
+            W.commit();
+
+            auto end1 = std::chrono::high_resolution_clock::now();
+            auto dur1 = end1 - begin1;
+            auto ms1 = std::chrono::duration_cast<std::chrono::milliseconds>(dur1).count();
+            std::cout << "Total time saving TX index: " << ms1 << " Total time preparing: " << ms2 << " records: " << c <<  std::endl;
+        }
+
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << std::endl;
+        return false;
+    }
+    */
     return WriteBatch(batch);
 }
 

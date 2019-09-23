@@ -1920,6 +1920,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
     }
 
     if (fAddressIndex) {
+        std::cout << "block undo..." << std::endl;
         if (!pblocktree->EraseAddressIndex(addressIndex)) {
             CValidationState state;
             AbortNode(state, "Failed to delete address index");
@@ -2432,6 +2433,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
 
 
     if (fAddressIndex) {
+        std::cout << "connecting block..." << std::endl;
         if (!pblocktree->WriteAddressIndex(addressIndex)) {
             return AbortNode(state, "Failed to write address index");
         }

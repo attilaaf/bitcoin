@@ -1798,8 +1798,10 @@ static UniValue getaddressutxos(const Config &config,
         output.push_back(Pair("address", address));
         output.push_back(Pair("txid", it->first.txhash.GetHex()));
         output.push_back(Pair("outputIndex", (int)it->first.index));
+        output.push_back(Pair("vout", (int)it->first.index));
         output.push_back(Pair("script", HexStr(it->second.script.begin(), it->second.script.end())));
         output.push_back(Pair("satoshis", it->second.satoshis));
+        output.push_back(Pair("value", ValueFromAmount(Amount(it->second.satoshis))));
 
         if (it->second.blockHeight == 999999999) {
             output.push_back(Pair("height", 0));
