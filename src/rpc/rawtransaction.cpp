@@ -1989,10 +1989,9 @@ static UniValue getaddressinfo(const Config &config,
         }
     }
 
-    std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
-
+    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > mempoolAddressIndex;
     // Add any mempool utxos first
-    if (!mempool.getAddressUnspent(addresses, unspentOutputs)) {
+    if (!mempool.getAddressIndex(addresses, mempoolAddressIndex)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
     }
     UniValue txList(UniValue::VARR);
@@ -2000,8 +1999,8 @@ static UniValue getaddressinfo(const Config &config,
     int unconfirmedBalance = 0;
 
     std::set<uint256> unconfirmedTxSet;
-    for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
-        unconfirmedBalance += it->second.satoshis;
+    for (std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> >::iterator it = mempoolAddressIndex.begin(); it != mempoolAddressIndex.end(); it++) {
+        unconfirmedBalance += it->second.amount;
         if (unconfirmedTxSet.find(it->first.txhash) == unconfirmedTxSet.end()) {
             unconfirmedTxSet.insert(it->first.txhash);
             txList.push_back(it->first.txhash.GetHex());

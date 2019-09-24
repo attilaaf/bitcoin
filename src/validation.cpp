@@ -1765,7 +1765,7 @@ DisconnectResult UndoCoinSpend(const Coin &undo, CCoinsViewCache &view,
  */
 static DisconnectResult DisconnectBlock(const CBlock &block,
                                         const CBlockIndex *pindex,
-                                        CCoinsViewCache &view) {
+                                        CCoinsViewCache &view, bool* pfClean) {
     CBlockUndo blockUndo;
     CDiskBlockPos pos = pindex->GetUndoPos();
     if (pos.IsNull()) {
@@ -1778,12 +1778,15 @@ static DisconnectResult DisconnectBlock(const CBlock &block,
         return DISCONNECT_FAILED;
     }
 
-    return ApplyBlockUndo(blockUndo, block, pindex, view);
+    return ApplyBlockUndo(blockUndo, block, pindex, view, pfClean);
 }
 
 DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
                                 const CBlock &block, const CBlockIndex *pindex,
-                                CCoinsViewCache &view) {
+                                CCoinsViewCache &view, bool* pfClean) {
+    if (pfClean)
+        *pfClean = false;
+
     bool fClean = true;
 
     if (blockUndo.vtxundo.size() + 1 != block.vtx.size()) {
@@ -1843,6 +1846,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
             bool is_spent = view.SpendCoin(out, &coin);
             if (!is_spent || tx.vout[o] != coin.GetTxOut()) {
                 // transaction output mismatch
+                std::cout << "--------TX OUTPUT MISMATCH" << std::endl;
                 fClean = false;
             }
         }
@@ -1864,6 +1868,7 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
             const Coin &undo = txundo.vprevout[j];
             DisconnectResult res = UndoCoinSpend(undo, view, out);
             if (res == DISCONNECT_FAILED) {
+                std::cout << "res == DISCONNECT_FAILED" << std::endl;
                 return DISCONNECT_FAILED;
             }
             fClean = fClean && res != DISCONNECT_UNCLEAN;
@@ -1911,6 +1916,11 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
     // Move best block pointer to previous block.
     view.SetBestBlock(block.hashPrevBlock);
 
+    if (pfClean) {
+        *pfClean = fClean;
+        return fClean ? DISCONNECT_OK : DISCONNECT_UNCLEAN;
+    }
+
     if (fSpentIndex) {
         if (!pblocktree->UpdateSpentIndex(spentIndex)) {
             CValidationState state;
@@ -1932,6 +1942,9 @@ DisconnectResult ApplyBlockUndo(const CBlockUndo &blockUndo,
             return DISCONNECT_UNCLEAN;
         }
     }
+
+    std::cout << "fClean at end" << (fClean ? "true" : "false") << std::endl;
+
     return fClean ? DISCONNECT_OK : DISCONNECT_UNCLEAN;
 }
 
@@ -2063,7 +2076,7 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
                          CValidationState &state, CBlockIndex *pindex,
                          CCoinsViewCache &view, bool fJustCheck = false) {
     AssertLockHeld(cs_main);
-
+    std::cout << "connecting block...TOP " << std::endl;
     int64_t nTimeStart = GetTimeMicros();
 
     // Check it again in case a previous version let a bad block in
@@ -2441,6 +2454,8 @@ static bool ConnectBlock(const Config &config, const CBlock &block,
         if (!pblocktree->UpdateAddressUnspentIndex(addressUnspentIndex)) {
             return AbortNode(state, "Failed to write address unspent index");
         }
+    } else {
+        std::cout << "FADDRESSSINDEX NOT SET connecting block..." << std::endl;
     }
 
     if (fSpentIndex)
@@ -2738,7 +2753,8 @@ static bool DisconnectTip(const Config &config, CValidationState &state,
     {
         CCoinsViewCache view(pcoinsTip);
         assert(view.GetBestBlock() == pindexDelete->GetBlockHash());
-        if (DisconnectBlock(block, pindexDelete, view) != DISCONNECT_OK) {
+        std::cout << "disconnect block 2" << std::endl;
+        if (DisconnectBlock(block, pindexDelete, view, NULL) != DISCONNECT_OK) {
             return error("DisconnectTip(): DisconnectBlock %s failed",
                          pindexDelete->GetBlockHash().ToString());
         }
@@ -2873,6 +2889,7 @@ static bool ConnectTip(const Config &config, CValidationState &state,
                        const std::shared_ptr<const CBlock> &pblock,
                        ConnectTrace &connectTrace,
                        DisconnectedBlockTransactions &disconnectpool) {
+    std::cout << "main ConnectTip call" << std::endl;
     assert(pindexNew->pprev == chainActive.Tip());
     // Read block from disk.
     int64_t nTime1 = GetTimeMicros();
@@ -2897,6 +2914,7 @@ static bool ConnectTip(const Config &config, CValidationState &state,
              (nTime2 - nTime1) * 0.001, nTimeReadFromDisk * 0.000001);
     {
         CCoinsViewCache view(pcoinsTip);
+        std::cout << "main connectblock call" << std::endl;
         bool rv = ConnectBlock(config, blockConnecting, state, pindexNew, view);
         GetMainSignals().BlockChecked(blockConnecting, state);
         if (!rv) {
@@ -3044,6 +3062,7 @@ static bool ActivateBestChainStep(const Config &config, CValidationState &state,
                                   const std::shared_ptr<const CBlock> &pblock,
                                   bool &fInvalidFound,
                                   ConnectTrace &connectTrace) {
+    std::cout << "ActivateBestChainStep" << std::endl;
     AssertLockHeld(cs_main);
     const CBlockIndex *pindexOldTip = chainActive.Tip();
     const CBlockIndex *pindexFork = chainActive.FindFork(pindexMostWork);
@@ -3081,6 +3100,7 @@ static bool ActivateBestChainStep(const Config &config, CValidationState &state,
         // Connect new blocks.
         for (CBlockIndex *pindexConnect :
              boost::adaptors::reverse(vpindexToConnect)) {
+            std::cout << "ConnectTip Outer Loop Calling" << std::endl;
             if (!ConnectTip(config, state, pindexConnect,
                             pindexConnect == pindexMostWork
                                 ? pblock
@@ -3156,6 +3176,7 @@ static void NotifyHeaderTip() {
 
 bool ActivateBestChain(const Config &config, CValidationState &state,
                        std::shared_ptr<const CBlock> pblock) {
+    std::cout << "ActivateBestChain FUNC" << std::endl;
     // Note that while we're often called here from ProcessNewBlock, this is
     // far from a guarantee. Things in the P2P/RPC will often end up calling
     // us in the middle of ProcessNewBlock - do not assume pblock is set
@@ -3167,12 +3188,14 @@ bool ActivateBestChain(const Config &config, CValidationState &state,
     do {
         boost::this_thread::interruption_point();
         if (ShutdownRequested()) {
+            std::cout << "shutdownrequest" << std::endl;
             break;
         }
 
         const CBlockIndex *pindexFork;
         bool fInitialDownload;
         {
+            std::cout << "initting" << std::endl;
             LOCK(cs_main);
 
             // Destructed before cs_main is unlocked.
@@ -3183,16 +3206,18 @@ bool ActivateBestChain(const Config &config, CValidationState &state,
                 // from under us, work out the best new tip to aim for.
                 pindexMostWork = FindMostWorkChain();
             }
-
+            std::cout << "pindexMost working checking..." << std::endl;
             // Whether we have anything to do at all.
             if (pindexMostWork == nullptr ||
                 pindexMostWork == chainActive.Tip()) {
+                std::cout << "pindexMost work" << pindexMostWork << ". " << std::endl;
                 return true;
             }
 
             bool fInvalidFound = false;
             std::shared_ptr<const CBlock> nullBlockPtr;
             CBlockIndex *pindexOldTip = chainActive.Tip();
+            std::cout << "ActivateBestChainStepping outer" << std::endl;
             if (!ActivateBestChainStep(
                     config, state, pindexMostWork,
                     pblock &&
@@ -3200,6 +3225,7 @@ bool ActivateBestChain(const Config &config, CValidationState &state,
                         ? pblock
                         : nullBlockPtr,
                     fInvalidFound, connectTrace)) {
+                std::cout << "ActivateBestChainStep" << std::endl;
                 return false;
             }
 
@@ -3218,6 +3244,7 @@ bool ActivateBestChain(const Config &config, CValidationState &state,
                                                 *trace.conflictedTxs);
             }
         }
+        std::cout << "ActivateBestChainStep switched new tip" << std::endl;
         // When we reach this point, we switched to a new tip (stored in
         // pindexNewTip).
 
@@ -3231,22 +3258,24 @@ bool ActivateBestChain(const Config &config, CValidationState &state,
         if (pindexFork != pindexNewTip) {
             uiInterface.NotifyBlockTip(fInitialDownload, pindexNewTip);
         }
+        std::cout << "(pindexNewTip != pindexMostWork); loop" << std::endl;
     } while (pindexNewTip != pindexMostWork);
 
     const CChainParams &params = config.GetChainParams();
     CheckBlockIndex(params.GetConsensus());
-
+    std::cout << "CheckBlockIndex" << std::endl;
     // Write changes periodically to disk, after relay.
     if (!FlushStateToDisk(params, state, FLUSH_STATE_PERIODIC)) {
+        std::cout << "FlushStateToDisk" << std::endl;
         return false;
     }
-
+    std::cout << "stop at height check" << std::endl;
     int nStopAtHeight = gArgs.GetArg("-stopatheight", DEFAULT_STOPATHEIGHT);
     if (nStopAtHeight && pindexNewTip &&
         pindexNewTip->nHeight >= nStopAtHeight) {
         StartShutdown();
     }
-
+    std::cout << "Returning TRUE" << std::endl;
     return true;
 }
 
@@ -4084,6 +4113,7 @@ bool TestBlockValidity(const Config &config, CValidationState &state,
         return error("%s: Consensus::ContextualCheckBlock: %s", __func__,
                      FormatStateMessage(state));
     }
+    std::cout << "connectblock outer test" << std::endl;
     if (!ConnectBlock(config, block, state, &indexDummy, viewNew, true)) {
         return false;
     }
@@ -4322,8 +4352,8 @@ static bool LoadBlockIndexDB(const CChainParams &chainparams) {
     LogPrintf("%s: spent index %s\n", __func__, fSpentIndex ? "enabled" : "disabled");
 
     // Check whether we have an address index
-    // pblocktree->ReadFlag("addressindex", fAddressIndex);
-    // LogPrintf("%s: address index %s\n", __func__, fAddressIndex ? "enabled" : "disabled");
+    pblocktree->ReadFlag("addressindex", fAddressIndex);
+    LogPrintf("%s: address index %s\n", __func__, fAddressIndex ? "enabled" : "disabled");
 
     return true;
 }
@@ -4362,8 +4392,10 @@ CVerifyDB::~CVerifyDB() {
 
 bool CVerifyDB::VerifyDB(const Config &config, CCoinsView *coinsview,
                          int nCheckLevel, int nCheckDepth) {
+    std::cout << "VerifyDB" << std::endl;
     LOCK(cs_main);
     if (chainActive.Tip() == nullptr || chainActive.Tip()->pprev == nullptr) {
+        std::cout << "VerifyDB nullptr" << std::endl;
         return true;
     }
 
@@ -4453,7 +4485,9 @@ bool CVerifyDB::VerifyDB(const Config &config, CCoinsView *coinsview,
             (coins.DynamicMemoryUsage() + pcoinsTip->DynamicMemoryUsage()) <=
                 nCoinCacheUsage) {
             assert(coins.GetBestBlock() == pindex->GetBlockHash());
-            DisconnectResult res = DisconnectBlock(block, pindex, coins);
+            std::cout << "disconnect block 1" << std::endl;
+            bool fClean = true;
+            DisconnectResult res = DisconnectBlock(block, pindex, coins, &fClean);
             if (res == DISCONNECT_FAILED) {
                 return error("VerifyDB(): *** irrecoverable inconsistency in "
                              "block data at %d, hash=%s",
@@ -4482,6 +4516,7 @@ bool CVerifyDB::VerifyDB(const Config &config, CCoinsView *coinsview,
     }
 
     // check level 4: try reconnecting blocks
+     std::cout << "nCheckLevel >= 4" << std::endl;
     if (nCheckLevel >= 4) {
         CBlockIndex *pindex = pindexState;
         while (pindex != chainActive.Tip()) {
@@ -4500,6 +4535,7 @@ bool CVerifyDB::VerifyDB(const Config &config, CCoinsView *coinsview,
                     "VerifyDB(): *** ReadBlockFromDisk failed at %d, hash=%s",
                     pindex->nHeight, pindex->GetBlockHash().ToString());
             }
+            std::cout << "connectblock outer" << std::endl;
             if (!ConnectBlock(config, block, state, pindex, coins)) {
                 return error(
                     "VerifyDB(): *** found unconnectable block at %d, hash=%s",
@@ -4597,7 +4633,8 @@ bool ReplayBlocks(const Config &config, CCoinsView *view) {
             }
             LogPrintf("Rolling back %s (%i)\n",
                       pindexOld->GetBlockHash().ToString(), pindexOld->nHeight);
-            DisconnectResult res = DisconnectBlock(block, pindexOld, cache);
+            std::cout << "disconnect block 3" << std::endl;
+            DisconnectResult res = DisconnectBlock(block, pindexOld, cache, NULL);
             if (res == DISCONNECT_FAILED) {
                 return error(
                     "RollbackBlock(): DisconnectBlock failed at %d, hash=%s",

@@ -2315,7 +2315,7 @@ bool AppInitMain(Config &config, boost::thread_group &threadGroup,
                         break;
                     }
                 }
-
+                std::cout << "verify blocks 1" << std::endl;
                 if (!CVerifyDB().VerifyDB(
                         config, pcoinsdbview,
                         gArgs.GetArg("-checklevel", DEFAULT_CHECKLEVEL),
