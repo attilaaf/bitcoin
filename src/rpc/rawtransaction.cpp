@@ -1666,6 +1666,27 @@ bool getAddressesFromFirstArray(const UniValue& addressValues, std::vector<std::
     return true;
 }
 
+bool getAddressesWithOriginalFromFirstArray(const UniValue& addressValues, std::vector<std::pair<std::pair<uint160, std::string>, int> > &addresses)
+{
+    if (!addressValues.isArray()) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Addresses is expected to be an array");
+    }
+
+    std::vector<UniValue> values = addressValues.getValues();
+
+    for (std::vector<UniValue>::iterator it = values.begin(); it != values.end(); ++it) {
+        CBase58Data address;
+        address.SetString(it->get_str());
+        uint160 hashBytes;
+        int type = 0;
+        if (!address.GetIndexKey(hashBytes, type)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address. Code: 3");
+        }
+        addresses.push_back(std::make_pair(std::make_pair(hashBytes, it->get_str()), type));
+    }
+    return true;
+}
+
 
 bool heightSort(std::pair<CAddressUnspentKey, CAddressUnspentValue> a,
                 std::pair<CAddressUnspentKey, CAddressUnspentValue> b) {
@@ -2079,49 +2100,55 @@ static UniValue getaddressbalance(const Config &config,
             + HelpExampleRpc("getaddressbalance", "{\"addresses\": [\"12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX\"]}")
         );
 
-    std::vector<std::pair<uint160, int> > addresses;
+    std::vector<std::pair<std::pair<uint160, std::string>, int> > addresses;
 
-    if (!getAddressesFromFirstArray(request.params[0], addresses)) {
+    if (!getAddressesWithOriginalFromFirstArray(request.params[0], addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
-    std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
+    UniValue entries(UniValue::VARR);
 
-    for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+    for (std::vector<std::pair<std::pair<uint160, std::string>, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
+        std::vector<std::pair<CAddressIndexKey, int64_t> > addressIndex;
+
+        if (!GetAddressIndex((*it).first.first, (*it).second, addressIndex)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
-    }
+        std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
 
-    std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
+        // Add any mempool utxos first
+        std::vector<std::pair<uint160, int> > singleAddress;
+        singleAddress.push_back(std::make_pair(it->first.first, it->second));
 
-    // Add any mempool utxos first
-    if (!mempool.getAddressUnspent(addresses, unspentOutputs)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
-    }
-
-    int unconfirmedBalance = 0;
-    for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
-        unconfirmedBalance += it->second.satoshis;
-    }
-
-    int64_t balance = 0;
-    int64_t received = 0;
-
-    for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
-        if (it->second > 0) {
-            received += it->second;
+        if (!mempool.getAddressUnspent(singleAddress, unspentOutputs)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
-        balance += it->second;
+
+        int unconfirmedBalance = 0;
+        for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
+            unconfirmedBalance += it->second.satoshis;
+        }
+
+        int64_t balance = 0;
+        int64_t received = 0;
+
+        for (std::vector<std::pair<CAddressIndexKey, int64_t> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+            if (it->second > 0) {
+                received += it->second;
+            }
+            balance += it->second;
+        }
+
+        UniValue result(UniValue::VOBJ);
+        result.push_back(Pair("address", it->first.second));
+        result.push_back(Pair("balance", balance));
+        result.push_back(Pair("confirmed", balance));
+        result.push_back(Pair("unconfirmed", unconfirmedBalance));
+        result.push_back(Pair("received", received));
+        entries.push_back(result);
     }
 
-    UniValue result(UniValue::VOBJ);
-    result.push_back(Pair("balance", balance));
-    result.push_back(Pair("confirmed", balance));
-    result.push_back(Pair("unconfirmed", unconfirmedBalance));
-    result.push_back(Pair("received", received));
-
-    return result;
+    return entries;
 
 }
 
