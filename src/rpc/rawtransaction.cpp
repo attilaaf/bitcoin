@@ -2371,6 +2371,15 @@ static UniValue getaddresstxidsoffsets(const Config &config,
     result.push_back(Pair("txs", txResults));
     return result;
 }
+static bool getAddressStringWithMap(const uint160& hashBytes, const std::map<uint160, std::string> &addressMap, std::string& address) {
+
+    auto val = addressMap.find(hashBytes);
+    if (val != addressMap.end()) {
+        address = val->second;
+        return true;
+    }
+    return false;
+}
 
 static UniValue getaddresstxids(const Config &config,
                                   const JSONRPCRequest &request) {
@@ -2402,9 +2411,9 @@ static UniValue getaddresstxids(const Config &config,
         );
 
     std::vector<std::pair<uint160, int> > addresses;
-    std::map<uint160, std::string> addressMap;
+    std::map<uint160, std::string> addressesMap;
 
-    if (!getAddressesFromFirstArrayWithAddressMap(request.params[0], addresses, addressMap)) {
+    if (!getAddressesFromFirstArrayWithAddressMap(request.params[0], addresses, addressesMap)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
@@ -2506,7 +2515,11 @@ static UniValue getaddresstxids(const Config &config,
         for (std::set<std::pair<std::pair<int, std::string>, uint160> >::const_reverse_iterator it=txids.rbegin(); it!=txids.rend(); it++) {
             if (counter >= from && counter <= to) {
                 UniValue txAndHeight(UniValue::VOBJ);
-                txAndHeight.push_back(Pair("a", it->second.GetHex()));
+                std::string address;
+                if (!getAddressStringWithMap(it->second, addressesMap, address)) {
+                     throw JSONRPCError( RPC_TYPE_ERROR, "Address not found in map");
+                }
+                txAndHeight.push_back(Pair("a", address));
                 txAndHeight.push_back(Pair("txid", it->first.second));
                 if (it->first.first == 999999999) {
                     txAndHeight.push_back(Pair("h", 0));
@@ -2534,7 +2547,11 @@ static UniValue getaddresstxids(const Config &config,
             if (txids.insert(std::make_pair(std::make_pair(height, txid), it->second)).second) {
                 if (counter >= from && counter <= to) {
                     UniValue txAndHeight(UniValue::VOBJ);
-                    txAndHeight.push_back(Pair("a", it->second.GetHex()));
+                    std::string address;
+                    if (!getAddressStringWithMap(it->second, addressesMap, address)) {
+                        throw JSONRPCError( RPC_TYPE_ERROR, "Address not found in map");
+                    }
+                    txAndHeight.push_back(Pair("a", address));
                     txAndHeight.push_back(Pair("txid", txid));
                     if (height == 999999999) {
                         txAndHeight.push_back(Pair("h", 0));
