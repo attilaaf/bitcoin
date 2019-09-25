@@ -548,6 +548,20 @@ bool CTxMemPool::getAddressIndex(std::vector<std::pair<uint160, int> > &addresse
     return true;
 }
 
+bool CTxMemPool::getAddressIndexWithAddress(std::vector<std::pair<uint160, int> > &addresses,
+                                 std::vector<std::pair<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>, uint160> > &results)
+{
+    LOCK(cs);
+    for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
+        addressDeltaMap::iterator ait = mapAddress.lower_bound(CMempoolAddressDeltaKey((*it).second, (*it).first));
+        while (ait != mapAddress.end() && (*ait).first.addressBytes == (*it).first && (*ait).first.type == (*it).second) {
+            results.push_back(std::make_pair(*ait, it->first));
+            ait++;
+        }
+    }
+    return true;
+}
+
 bool CTxMemPool::removeAddressIndex(const uint256 txhash)
 {
     LOCK(cs);
